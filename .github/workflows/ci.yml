@@ -55,6 +55,6 @@ jobs:
     needs: [go-check, sonar, docker]
     uses: duyhenryer/shared-workflows/.github/workflows/status.yml@main
     with:
-      slack_channel_id: "C08B6K15431"
+      slack_channel_id: "C0AD03JQNTV"
     secrets:
       SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
