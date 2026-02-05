@@ -1,0 +1,32 @@
+name: CI Pipeline
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  go-check:
+    uses: duyhenryer/shared-workflows/.github/workflows/go-check.yml@main
+    with:
+      command-test: 'go test -race -coverprofile=coverage.out ./...'
+      lint: true
+    secrets: inherit
+
+  sonar:
+    needs: go-check
+    uses: duyhenryer/shared-workflows/.github/workflows/sonarqube.yml@main
+    with:
+      project-key: 'duynhne_product-service'
+      organization: 'duynhne'
+    secrets: inherit
+
+  docker:
+    needs: go-check
+    if: github.ref == 'refs/heads/main'
+    uses: duyhenryer/shared-workflows/.github/workflows/docker-build.yml@main
+    with:
+      image-name: 'product-service'
+      push: true
+    secrets: inherit
