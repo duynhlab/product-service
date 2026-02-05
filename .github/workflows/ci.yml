@@ -26,7 +26,7 @@ jobs:
     needs: go-check
     uses: duyhenryer/shared-workflows/.github/workflows/sonarqube.yml@main
     with:
-      project-key: 'duynhne_product-service'
+      project-key: 'duynhne_product'
       organization: 'duynhne'
       fail-on-quality-gate: false
     secrets:
@@ -41,7 +41,23 @@ jobs:
     if: github.ref == 'refs/heads/main'
     uses: duyhenryer/shared-workflows/.github/workflows/docker-build.yml@main
     with:
-      image-name: 'product-service'
+      image-name: 'product'
+      push: true
+    secrets: inherit
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+
+  # 4b. Build Migration Image
+  docker-db-init:
+    needs: [go-check, sonar]
+    if: github.ref == 'refs/heads/main'
+    uses: duyhenryer/shared-workflows/.github/workflows/docker-build.yml@main
+    with:
+      image-name: 'product-init'
+      dockerfile: 'db/migrations/Dockerfile'
+      context: 'db/migrations'
       push: true
     secrets: inherit
     permissions:
@@ -52,7 +68,7 @@ jobs:
   # 5. Final Status Notification
   notify:
     if: always()
-    needs: [go-check, sonar, docker]
+    needs: [go-check, sonar, docker, docker-db-init]
     uses: duyhenryer/shared-workflows/.github/workflows/status.yml@main
     with:
       slack_channel_id: "C0AD82A9A74"
