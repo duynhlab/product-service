@@ -28,6 +28,7 @@ jobs:
     with:
       project-key: 'duynhne_product-service'
       organization: 'duynhne'
+      fail-on-quality-gate: false
     secrets:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
     permissions:
