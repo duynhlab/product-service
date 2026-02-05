@@ -7,7 +7,13 @@ on:
     branches: [main]
 
 jobs:
-  # Go quality checks (test + lint)
+  # 1. PR Checks (Branch Name + Slack "PR Opened")
+  common:
+    if: github.event_name == 'pull_request'
+    uses: duyhenryer/shared-workflows/.github/workflows/ci-common.yml@main
+    secrets: inherit
+
+  # 2. Test & Lint
   go-check:
     uses: duyhenryer/shared-workflows/.github/workflows/go-check.yml@main
     with:
@@ -15,7 +21,7 @@ jobs:
       lint: true
     secrets: inherit
 
-  # SonarCloud analysis
+  # 3. Analysis
   sonar:
     needs: go-check
     uses: duyhenryer/shared-workflows/.github/workflows/sonarqube.yml@main
@@ -28,9 +34,9 @@ jobs:
       contents: read
       pull-requests: read
 
-  # Docker build and push (only on main)
+  # 4. Build (Main Only)
   docker:
-    needs: go-check
+    needs: [go-check, sonar]
     if: github.ref == 'refs/heads/main'
     uses: duyhenryer/shared-workflows/.github/workflows/docker-build.yml@main
     with:
@@ -41,3 +47,12 @@ jobs:
       contents: read
       packages: write
       id-token: write
+
+  # 5. Final Status Notification
+  notify:
+    if: always()
+    needs: [go-check, sonar, docker]
+    uses: duyhenryer/shared-workflows/.github/workflows/status.yml@main
+    with:
+      slack_channel_id: "C08B6K15431"
+    secrets: inherit
