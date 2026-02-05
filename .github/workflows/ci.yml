@@ -55,4 +55,5 @@ jobs:
     uses: duyhenryer/shared-workflows/.github/workflows/status.yml@main
     with:
       slack_channel_id: "C08B6K15431"
-    secrets: inherit
+    secrets:
+      SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
