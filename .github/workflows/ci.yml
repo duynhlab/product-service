@@ -26,7 +26,7 @@ jobs:
     needs: go-check
     uses: duyhenryer/shared-workflows/.github/workflows/sonarqube.yml@main
     with:
-      project-key: 'duynhne_product'
+      project-key: 'duynhne_product-service'
       organization: 'duynhne'
       fail-on-quality-gate: false
     secrets:
@@ -41,7 +41,7 @@ jobs:
     if: github.ref == 'refs/heads/main'
     uses: duyhenryer/shared-workflows/.github/workflows/docker-build.yml@main
     with:
-      image-name: 'product'
+      image-name: 'product-service'
       push: true
     secrets: inherit
     permissions:
@@ -55,7 +55,7 @@ jobs:
     if: github.ref == 'refs/heads/main'
     uses: duyhenryer/shared-workflows/.github/workflows/docker-build.yml@main
     with:
-      image-name: 'product-init'
+      image-name: 'product-service-init'
       dockerfile: 'db/migrations/Dockerfile'
       context: 'db/migrations'
       push: true
