@@ -7,6 +7,7 @@ on:
     branches: [main]
 
 jobs:
+  # Go quality checks (test + lint)
   go-check:
     uses: duyhenryer/shared-workflows/.github/workflows/go-check.yml@main
     with:
@@ -14,6 +15,7 @@ jobs:
       lint: true
     secrets: inherit
 
+  # SonarCloud analysis
   sonar:
     needs: go-check
     uses: duyhenryer/shared-workflows/.github/workflows/sonarqube.yml@main
@@ -22,6 +24,7 @@ jobs:
       organization: 'duynhne'
     secrets: inherit
 
+  # Docker build and push (only on main)
   docker:
     needs: go-check
     if: github.ref == 'refs/heads/main'
@@ -30,3 +33,7 @@ jobs:
       image-name: 'product-service'
       push: true
     secrets: inherit
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
