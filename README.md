@@ -34,6 +34,3 @@ go test ./...
 go run cmd/main.go
 ```
 
-## License
-
-MIT
