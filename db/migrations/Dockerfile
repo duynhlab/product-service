@@ -9,10 +9,11 @@ RUN apk add --update \
     openjdk17-jre \
     wget \
     bash \
+    ca-certificates \
     && rm -rf /var/cache/apk/*
 
 # Download, extract, and setup flyway
-RUN wget --no-check-certificate $FLYWAY_PKGS && \
+RUN wget $FLYWAY_PKGS && \
     mkdir -p $FLYWAY_HOME && \
     tar -xzf flyway-commandline-$FLYWAY_VERSION.tar.gz -C $FLYWAY_HOME --strip-components=1 && \
     rm flyway-commandline-$FLYWAY_VERSION.tar.gz && \
