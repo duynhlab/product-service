@@ -12,6 +12,3 @@ linters:
   - unused
   - gofmt
   - goimports
-  settings:
-    goimports:
-      local-prefixes: github.com/duynhne/product-service
