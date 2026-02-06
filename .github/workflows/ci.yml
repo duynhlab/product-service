@@ -67,7 +67,7 @@ jobs:
     secrets: inherit
 
 
-  # 5. Final Status Notification
+  # 5. Final Status Notification + Google Sheets Reporting
   notify:
     if: always()
     needs: [pr-checks, go-check, sonar, docker, docker-db-init]
@@ -75,5 +75,8 @@ jobs:
     with:
       slack_channel_id: "C0AD82A9A74"
       slack_thread_ts: ${{ needs.pr-checks.outputs.slack_thread_ts }}
+      gsheet_spreadsheet_id: "1F2VUrAOyMGnETApp5yA-ldCW81ConiQXnWYZVxKas_0"
     secrets:
       SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+      GSHEET_CLIENT_EMAIL: ${{ secrets.GSHEET_CLIENT_EMAIL }}
+      GSHEET_PRIVATE_KEY: ${{ secrets.GSHEET_PRIVATE_KEY }}
