@@ -48,7 +48,7 @@ jobs:
     if: github.ref == 'refs/heads/main'
     uses: duyhenryer/shared-workflows/.github/workflows/docker-build.yml@main
     with:
-      image-name: 'product-service'
+      image-name: 'product'
       push: true
     secrets: inherit
 
@@ -59,7 +59,7 @@ jobs:
     if: github.ref == 'refs/heads/main'
     uses: duyhenryer/shared-workflows/.github/workflows/docker-build.yml@main
     with:
-      image-name: 'product-service-init'
+      image-name: 'product-init'
       dockerfile: 'db/migrations/Dockerfile'
       context: 'db/migrations'
       push: true
