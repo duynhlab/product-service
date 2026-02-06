@@ -22,6 +22,7 @@ import (
 	"github.com/duynhne/product-service/middleware"
 )
 
+//nolint:gocognit,funlen // main orchestrates startup/shutdown; single func is intentional
 func main() {
 	// Load configuration from environment variables (with .env file support for local dev)
 	cfg := config.Load()
@@ -34,7 +35,7 @@ func main() {
 	if err != nil {
 		panic("Failed to initialize logger: " + err.Error())
 	}
-	defer logger.Sync()
+	defer func() { _ = logger.Sync() }()
 
 	logger.Info("Service starting",
 		zap.String("service", cfg.Service.Name),
@@ -178,10 +179,11 @@ func main() {
 		apiV1.POST("/products", v1.CreateProduct)
 	}
 
-	// Create HTTP server
+	// Create HTTP server (ReadHeaderTimeout mitigates Slowloris)
 	srv := &http.Server{
-		Addr:    ":" + cfg.Service.Port,
-		Handler: r,
+		Addr:              ":" + cfg.Service.Port,
+		Handler:           r,
+		ReadHeaderTimeout: 10 * time.Second,
 	}
 
 	// Start server in a goroutine

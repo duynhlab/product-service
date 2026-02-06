@@ -145,7 +145,6 @@ func (r *PostgresProductRepository) Count(ctx context.Context, filters domain.Pr
 	if filters.Search != "" {
 		query += fmt.Sprintf(" AND p.name ILIKE $%d", argPos)
 		args = append(args, "%"+filters.Search+"%")
-		argPos++
 	}
 
 	var count int

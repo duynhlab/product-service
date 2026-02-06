@@ -52,6 +52,6 @@ func InitProfiling() error {
 // StopProfiling stops Pyroscope profiling
 func StopProfiling() {
 	if profiler != nil {
-		profiler.Stop()
+		_ = profiler.Stop()
 	}
 }

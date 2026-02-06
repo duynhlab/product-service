@@ -3,6 +3,7 @@ package cache
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -37,7 +38,7 @@ func NewValkeyCacheClient(addr string, password string, db int) (*ValkeyCacheCli
 // Get retrieves a value from cache by key
 func (c *ValkeyCacheClient) Get(ctx context.Context, key string) ([]byte, error) {
 	val, err := c.client.Get(ctx, key).Bytes()
-	if err == redis.Nil {
+	if errors.Is(err, redis.Nil) {
 		// Key doesn't exist - cache miss (not an error)
 		return nil, nil
 	}

@@ -29,7 +29,7 @@ func NewProductCache(client CacheClient, ttlList, ttlDetail time.Duration) *Prod
 
 // generateProductKey generates cache key for a single product
 func (c *ProductCache) generateProductKey(id string) string {
-	return fmt.Sprintf("product:%s", id)
+	return "product:" + id
 }
 
 // generateProductListKey generates cache key for product list with filters
@@ -108,7 +108,7 @@ func (c *ProductCache) GetProductOrSet(ctx context.Context, id string, fetchFunc
 	}
 
 	// 2. Cache miss - Try to acquire lock
-	lockKey := fmt.Sprintf("lock:product:%s", id)
+	lockKey := "lock:product:" + id
 	acquired, err := c.client.SetNX(ctx, lockKey, []byte("1"), 5*time.Second) // 5s lock TTL
 	if err != nil {
 		return nil, err
@@ -116,7 +116,7 @@ func (c *ProductCache) GetProductOrSet(ctx context.Context, id string, fetchFunc
 
 	if acquired {
 		// 3a. Lock acquired - Owner responsible for fetching data
-		defer c.client.Delete(ctx, lockKey) // Ensure lock is released
+		defer func() { _ = c.client.Delete(ctx, lockKey) }() // Ensure lock is released
 
 		// Fetch from DB
 		product, err := fetchFunc()
@@ -124,11 +124,8 @@ func (c *ProductCache) GetProductOrSet(ctx context.Context, id string, fetchFunc
 			return nil, err
 		}
 
-		// Set cache
-		if err := c.SetProduct(ctx, id, product); err != nil {
-			// Log error but return success since we have the data
-			// In a real app, use a logger here
-		}
+		// Set cache (best-effort; return product either way)
+		_ = c.SetProduct(ctx, id, product)
 
 		return product, nil
 	} else {

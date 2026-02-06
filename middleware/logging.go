@@ -39,7 +39,7 @@ func splitTraceParent(traceParent string) []string {
 	// Simple split by hyphen, traceparent format: 00-<trace_id>-<parent_id>-<flags>
 	parts := make([]string, 0, 4)
 	start := 0
-	for i := 0; i < len(traceParent); i++ {
+	for i := range traceParent {
 		if traceParent[i] == '-' {
 			if start < i {
 				parts = append(parts, traceParent[start:i])
@@ -57,7 +57,7 @@ func splitTraceParent(traceParent string) []string {
 func generateTraceID() string {
 	// Generate 16 random bytes (32 hex characters)
 	b := make([]byte, 16)
-	rand.Read(b)
+	_, _ = rand.Read(b)
 	return hex.EncodeToString(b)
 }
 
