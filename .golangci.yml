@@ -10,5 +10,4 @@ linters:
   - ineffassign
   - staticcheck
   - unused
-  - gofmt
   - goimports
