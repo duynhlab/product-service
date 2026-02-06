@@ -9,6 +9,8 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.24.0"
 )
 
+const defaultServiceNameFallback = "unknown-service"
+
 // detectServiceInfo automatically detects service name and namespace from Kubernetes environment
 // This function uses multiple detection methods with fallback priority:
 // 1. OTEL_SERVICE_NAME env var (highest priority)
@@ -106,12 +108,13 @@ func CreateResource(ctx context.Context) (*resource.Resource, error) {
 	)
 
 	if err != nil {
-		// If resource creation fails, create minimal resource
-		return resource.NewWithAttributes(
+		// If resource creation fails, create minimal resource and surface error
+		res := resource.NewWithAttributes(
 			semconv.SchemaURL,
 			semconv.ServiceNameKey.String(serviceName),
 			semconv.ServiceNamespaceKey.String(namespace),
-		), nil
+		)
+		return res, err
 	}
 
 	return res, nil
@@ -124,5 +127,5 @@ func GetServiceName(res *resource.Resource) string {
 			return attr.Value.AsString()
 		}
 	}
-	return "unknown-service"
+	return defaultServiceNameFallback
 }

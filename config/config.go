@@ -22,6 +22,7 @@ package config
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"strconv"
 	"strings"
@@ -29,6 +30,8 @@ import (
 
 	"github.com/joho/godotenv"
 )
+
+const defaultServiceName = "unknown"
 
 // Config holds all configuration for a microservice
 type Config struct {
@@ -112,9 +115,9 @@ type DatabaseConfig struct {
 
 // BuildDSN constructs PostgreSQL connection string from config
 func (c *DatabaseConfig) BuildDSN() string {
-	// Format: postgresql://user:password@host:port/dbname?sslmode=disable
-	return fmt.Sprintf("postgresql://%s:%s@%s:%s/%s?sslmode=%s",
-		c.User, c.Password, c.Host, c.Port, c.Name, c.SSLMode)
+	hostPort := net.JoinHostPort(c.Host, c.Port)
+	return fmt.Sprintf("postgresql://%s:%s@%s/%s?sslmode=%s",
+		c.User, c.Password, hostPort, c.Name, c.SSLMode)
 }
 
 // Load reads configuration from environment variables with defaults
@@ -129,7 +132,7 @@ func Load() *Config {
 
 	return &Config{
 		Service: ServiceConfig{
-			Name:    getEnv("SERVICE_NAME", "unknown"),
+			Name:    getEnv("SERVICE_NAME", defaultServiceName),
 			Port:    getEnv("PORT", "8080"),
 			Version: getEnv("VERSION", "dev"),
 			Env:     getEnv("ENV", "development"),
@@ -138,7 +141,7 @@ func Load() *Config {
 			Enabled:            getEnvBool("TRACING_ENABLED", true),
 			Endpoint:           getEnv("OTEL_COLLECTOR_ENDPOINT", "otel-collector-opentelemetry-collector.monitoring.svc.cluster.local:4318"),
 			SampleRate:         getEnvFloat("OTEL_SAMPLE_RATE", 0.1), // 10% default (production)
-			ServiceName:        getEnv("SERVICE_NAME", "unknown"),
+			ServiceName:        getEnv("SERVICE_NAME", defaultServiceName),
 			MaxExportBatchSize: getEnvInt("OTEL_BATCH_SIZE", 512),
 		},
 		Profiling: ProfilingConfig{
@@ -180,13 +183,15 @@ func Load() *Config {
 	}
 }
 
-// Validate performs comprehensive validation of all configuration fields
-// Returns detailed error messages for SRE/DevOps troubleshooting
+// Validate performs comprehensive validation of all configuration fields.
+// Returns detailed error messages for SRE/DevOps troubleshooting.
+//
+//nolint:gocognit // validation branches per section; single func keeps errors cohesive
 func (c *Config) Validate() error {
 	var errors []string
 
 	// Service validation
-	if c.Service.Name == "" || c.Service.Name == "unknown" {
+	if c.Service.Name == "" || c.Service.Name == defaultServiceName {
 		errors = append(errors, "SERVICE_NAME is required (e.g., 'auth', 'user', 'product')")
 	}
 	if c.Service.Port == "" {
@@ -194,7 +199,7 @@ func (c *Config) Validate() error {
 	}
 	// Validate port is a valid number
 	if _, err := strconv.Atoi(c.Service.Port); err != nil {
-		errors = append(errors, fmt.Sprintf("PORT must be a valid number, got: %s", c.Service.Port))
+		errors = append(errors, "PORT must be a valid number, got: "+c.Service.Port)
 	}
 	// Validate environment
 	validEnvs := []string{"development", "dev", "staging", "stage", "production", "prod"}
@@ -210,7 +215,7 @@ func (c *Config) Validate() error {
 		if c.Tracing.SampleRate < 0 || c.Tracing.SampleRate > 1.0 {
 			errors = append(errors, fmt.Sprintf("OTEL_SAMPLE_RATE must be between 0.0 and 1.0, got: %.2f", c.Tracing.SampleRate))
 		}
-		if c.Tracing.ServiceName == "" || c.Tracing.ServiceName == "unknown" {
+		if c.Tracing.ServiceName == "" || c.Tracing.ServiceName == defaultServiceName {
 			errors = append(errors, "SERVICE_NAME is required for tracing (used in Tempo queries)")
 		}
 	}
@@ -220,7 +225,7 @@ func (c *Config) Validate() error {
 		if c.Profiling.Endpoint == "" {
 			errors = append(errors, "PYROSCOPE_ENDPOINT is required when profiling is enabled")
 		}
-		if c.Profiling.ServiceName == "" || c.Profiling.ServiceName == "unknown" {
+		if c.Profiling.ServiceName == "" || c.Profiling.ServiceName == defaultServiceName {
 			errors = append(errors, "SERVICE_NAME is required for profiling (used in Pyroscope UI)")
 		}
 	}
@@ -249,7 +254,7 @@ func (c *Config) Validate() error {
 		// Validate port is a valid number
 		if c.Database.Port != "" {
 			if _, err := strconv.Atoi(c.Database.Port); err != nil {
-				errors = append(errors, fmt.Sprintf("DB_PORT must be a valid number, got: %s", c.Database.Port))
+				errors = append(errors, "DB_PORT must be a valid number, got: "+c.Database.Port)
 			}
 		}
 	}
@@ -262,7 +267,7 @@ func (c *Config) Validate() error {
 		// Validate port is a valid number
 		if c.Cache.Port != "" {
 			if _, err := strconv.Atoi(c.Cache.Port); err != nil {
-				errors = append(errors, fmt.Sprintf("CACHE_PORT must be a valid number, got: %s", c.Cache.Port))
+				errors = append(errors, "CACHE_PORT must be a valid number, got: "+c.Cache.Port)
 			}
 		}
 		// Validate DB is non-negative
@@ -300,8 +305,10 @@ func getEnv(key, defaultValue string) string {
 	return defaultValue
 }
 
-// getEnvBool reads a boolean environment variable with a default fallback
-// Accepts: "true", "1", "yes" for true | "false", "0", "no" for false
+// getEnvBool reads a boolean environment variable with a default fallback.
+// Accepts: "true", "1", "yes" for true | "false", "0", "no" for false.
+//
+//nolint:unparam // defaultValue is used when key is unset; callers use true or false
 func getEnvBool(key string, defaultValue bool) bool {
 	value := os.Getenv(key)
 	if value == "" {

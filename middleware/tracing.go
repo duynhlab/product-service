@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -35,12 +36,12 @@ var (
 func InitTracing(cfg *config.Config) (*sdktrace.TracerProvider, error) {
 	// Skip tracing initialization if disabled
 	if !cfg.Tracing.Enabled {
-		return nil, fmt.Errorf("tracing is disabled (TRACING_ENABLED=false)")
+		return nil, errors.New("tracing is disabled (TRACING_ENABLED=false)")
 	}
 
 	// Validate tracing configuration
 	if cfg.Tracing.Endpoint == "" {
-		return nil, fmt.Errorf("OTEL_COLLECTOR_ENDPOINT is required when tracing is enabled")
+		return nil, errors.New("OTEL_COLLECTOR_ENDPOINT is required when tracing is enabled")
 	}
 	if cfg.Tracing.SampleRate < 0 || cfg.Tracing.SampleRate > 1.0 {
 		return nil, fmt.Errorf("OTEL_SAMPLE_RATE must be between 0.0 and 1.0, got: %.2f", cfg.Tracing.SampleRate)
@@ -71,7 +72,7 @@ func InitTracing(cfg *config.Config) (*sdktrace.TracerProvider, error) {
 
 	// Store detected service name for middleware usage
 	detectedService = GetServiceName(res)
-	if detectedService == "" || detectedService == "unknown-service" {
+	if detectedService == "" || detectedService == defaultServiceNameFallback {
 		detectedService = cfg.Service.Name
 	}
 
@@ -129,7 +130,7 @@ func shouldTrace(path string) bool {
 func TracingMiddleware() gin.HandlerFunc {
 	serviceName := detectedService
 	if serviceName == "" {
-		serviceName = "unknown-service"
+		serviceName = defaultServiceNameFallback
 	}
 
 	// Wrap otelgin middleware with request filtering
@@ -168,8 +169,10 @@ func GetTracer() trace.Tracer {
 //
 //	ctx, span := middleware.StartSpan(ctx, "database.query")
 //	defer span.End()
+//nolint:spancheck // caller must call span.End(); see doc
 func StartSpan(ctx context.Context, name string, opts ...trace.SpanStartOption) (context.Context, trace.Span) {
-	return GetTracer().Start(ctx, name, opts...)
+	ctx, span := GetTracer().Start(ctx, name, opts...)
+	return ctx, span
 }
 
 // Shutdown gracefully shuts down the tracer provider, flushing any pending spans
