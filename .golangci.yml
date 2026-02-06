@@ -11,3 +11,7 @@ linters:
   - staticcheck
   - unused
   - goimports
+  - gofmt
+  settings:
+    goimports:
+      local-prefixes: github.com/duynhne/product-service
