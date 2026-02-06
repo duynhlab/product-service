@@ -69,9 +69,10 @@ jobs:
   # 5. Final Status Notification
   notify:
     if: always()
-    needs: [go-check, sonar, docker, docker-db-init]
+    needs: [pr-checks, go-check, sonar, docker, docker-db-init]
     uses: duyhenryer/shared-workflows/.github/workflows/status.yml@main
     with:
       slack_channel_id: "C0AD82A9A74"
+      slack_thread_ts: ${{ needs.pr-checks.outputs.slack_thread_ts }}
     secrets:
       SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
