@@ -18,8 +18,7 @@ jobs:
   pr-checks:
     if: github.event_name == 'pull_request'
     uses: duyhenryer/shared-workflows/.github/workflows/pr-checks.yml@main
-    secrets:
-      SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+    secrets: inherit
 
   # 2. Test & Lint
   go-check:
@@ -27,8 +26,7 @@ jobs:
     with:
       command-test: 'go test -race -coverprofile=coverage.out ./...'
       lint: true
-    secrets:
-      SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+    secrets: inherit
 
   # 3. Analysis
   sonar:
@@ -50,8 +48,7 @@ jobs:
     with:
       image-name: 'product-service'
       push: true
-    secrets:
-      SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+    secrets: inherit
 
 
   # 4b. Build Migration Image
@@ -64,8 +61,7 @@ jobs:
       dockerfile: 'db/migrations/Dockerfile'
       context: 'db/migrations'
       push: true
-    secrets:
-      SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+    secrets: inherit
 
 
   # 5. Final Status Notification
@@ -75,5 +71,4 @@ jobs:
     uses: duyhenryer/shared-workflows/.github/workflows/status.yml@main
     with:
       slack_channel_id: "C0AD82A9A74"
-    secrets:
-      SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+    secrets: inherit
