@@ -18,9 +18,10 @@ jobs:
   pr-checks:
     if: github.event_name == 'pull_request'
     uses: duyhenryer/shared-workflows/.github/workflows/pr-checks.yml@main
+    with:
+      slack_channel_id: "C0AD82A9A74"
     secrets:
       SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
-      SLACK_CHANNEL_ID: ${{ secrets.SLACK_CHANNEL_ID }}
 
   # 2. Test & Lint
   go-check:
