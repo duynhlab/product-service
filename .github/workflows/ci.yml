@@ -18,7 +18,8 @@ jobs:
   pr-checks:
     if: github.event_name == 'pull_request'
     uses: duyhenryer/shared-workflows/.github/workflows/pr-checks.yml@main
-    secrets: inherit
+    secrets:
+      SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
 
   # 2. Test & Lint
   go-check:
@@ -71,4 +72,5 @@ jobs:
     uses: duyhenryer/shared-workflows/.github/workflows/status.yml@main
     with:
       slack_channel_id: "C0AD82A9A74"
-    secrets: inherit
+    secrets:
+      SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
