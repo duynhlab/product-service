@@ -119,14 +119,12 @@ func main() {
 	productService := logicv1.NewProductService(productRepo, productCache)
 	logger.Info("Product service initialized")
 
-	// Set service instances in Web handlers
-	v1.SetProductService(productService)
-
 	// Initialize review service client for aggregation in product details endpoint
 	reviewClient := v1.NewReviewClient(cfg.ReviewServiceURL)
-	v1.SetReviewClient(reviewClient)
 	logger.Info("Review client initialized", zap.String("review_service_url", cfg.ReviewServiceURL))
 
+	// Initialize Web handler with dependency injection
+	productHandler := v1.NewProductHandler(productService, reviewClient)
 	logger.Info("Web handlers configured")
 
 	r := gin.Default()
@@ -173,10 +171,10 @@ func main() {
 	// API v1 (canonical API - frontend-aligned)
 	apiV1 := r.Group("/api/v1")
 	{
-		apiV1.GET("/products", v1.ListProducts)
-		apiV1.GET("/products/:id", v1.GetProduct)
-		apiV1.GET("/products/:id/details", v1.GetProductDetails) // Aggregation endpoint
-		apiV1.POST("/products", v1.CreateProduct)
+		apiV1.GET("/products", productHandler.ListProducts)
+		apiV1.GET("/products/:id", productHandler.GetProduct)
+		apiV1.GET("/products/:id/details", productHandler.GetProductDetails) // Aggregation endpoint
+		apiV1.POST("/products", productHandler.CreateProduct)
 	}
 
 	// Create HTTP server (ReadHeaderTimeout mitigates Slowloris)

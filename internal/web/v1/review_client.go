@@ -130,11 +130,3 @@ func ComputeReviewsSummary(reviews []Review) (total int, averageRating float64) 
 	averageRating = float64(sum) / float64(total)
 	return total, averageRating
 }
-
-// reviewClient is the singleton instance, set via SetReviewClient
-var reviewClient *ReviewClient
-
-// SetReviewClient sets the review client instance
-func SetReviewClient(client *ReviewClient) {
-	reviewClient = client
-}
