@@ -15,15 +15,26 @@ import (
 	"go.uber.org/zap"
 )
 
-// productService will be initialized in main.go with repository injection
-var productService *logicv1.ProductService
-
-// SetProductService sets the product service instance
-func SetProductService(service *logicv1.ProductService) {
-	productService = service
+// ProductHandler handles HTTP requests for products
+type ProductHandler struct {
+	productService *logicv1.ProductService
+	reviewClient   *ReviewClient
 }
 
-func ListProducts(c *gin.Context) {
+// NewProductHandler creates a new ProductHandler
+func NewProductHandler(service *logicv1.ProductService, reviewClient *ReviewClient) *ProductHandler {
+	return &ProductHandler{
+		productService: service,
+		reviewClient:   reviewClient,
+	}
+}
+
+const (
+	// DefaultRelatedProductsLimit is the default number of related products to return
+	DefaultRelatedProductsLimit = 4
+)
+
+func (h *ProductHandler) ListProducts(c *gin.Context) {
 	ctx, span := middleware.StartSpan(c.Request.Context(), "http.request", trace.WithAttributes(
 		attribute.String("layer", "web"),
 		attribute.String("method", c.Request.Method),
@@ -53,7 +64,7 @@ func ListProducts(c *gin.Context) {
 		}
 	}
 
-	products, total, err := productService.ListProducts(ctx, filters)
+	products, total, err := h.productService.ListProducts(ctx, filters)
 	if err != nil {
 		span.RecordError(err)
 		zapLogger.Error("Failed to list products", zap.Error(err))
@@ -68,7 +79,7 @@ func ListProducts(c *gin.Context) {
 	})
 }
 
-func GetProduct(c *gin.Context) {
+func (h *ProductHandler) GetProduct(c *gin.Context) {
 	ctx, span := middleware.StartSpan(c.Request.Context(), "http.request", trace.WithAttributes(
 		attribute.String("layer", "web"),
 		attribute.String("method", c.Request.Method),
@@ -80,7 +91,7 @@ func GetProduct(c *gin.Context) {
 	id := c.Param("id")
 	span.SetAttributes(attribute.String("product.id", id))
 
-	product, err := productService.GetProduct(ctx, id)
+	product, err := h.productService.GetProduct(ctx, id)
 	if err != nil {
 		span.RecordError(err)
 		zapLogger.Error("Failed to get product", zap.Error(err))
@@ -98,7 +109,7 @@ func GetProduct(c *gin.Context) {
 	c.JSON(http.StatusOK, product)
 }
 
-func CreateProduct(c *gin.Context) {
+func (h *ProductHandler) CreateProduct(c *gin.Context) {
 	ctx, span := middleware.StartSpan(c.Request.Context(), "http.request", trace.WithAttributes(
 		attribute.String("layer", "web"),
 		attribute.String("method", c.Request.Method),
@@ -118,7 +129,7 @@ func CreateProduct(c *gin.Context) {
 	}
 
 	span.SetAttributes(attribute.Bool("request.valid", true))
-	product, err := productService.CreateProduct(ctx, req)
+	product, err := h.productService.CreateProduct(ctx, req)
 	if err != nil {
 		span.RecordError(err)
 		zapLogger.Error("Failed to create product", zap.Error(err))
@@ -139,7 +150,7 @@ func CreateProduct(c *gin.Context) {
 }
 
 // GetProductDetails retrieves aggregated product details (product + reviews + stock + related)
-func GetProductDetails(c *gin.Context) {
+func (h *ProductHandler) GetProductDetails(c *gin.Context) {
 	ctx, span := middleware.StartSpan(c.Request.Context(), "http.request", trace.WithAttributes(
 		attribute.String("layer", "web"),
 		attribute.String("method", c.Request.Method),
@@ -152,7 +163,7 @@ func GetProductDetails(c *gin.Context) {
 	span.SetAttributes(attribute.String("product.id", id))
 
 	// Get product details
-	product, err := productService.GetProduct(ctx, id)
+	product, err := h.productService.GetProduct(ctx, id)
 	if err != nil {
 		span.RecordError(err)
 		zapLogger.Error("Failed to get product", zap.Error(err))
@@ -167,14 +178,14 @@ func GetProductDetails(c *gin.Context) {
 	}
 
 	// Get related products (aggregation in Web layer)
-	relatedProducts, _ := productService.GetRelatedProducts(ctx, id, 4)
+	relatedProducts, _ := h.productService.GetRelatedProducts(ctx, id, DefaultRelatedProductsLimit)
 
 	// Get reviews from review service (soft-fail: return empty on error)
 	var reviews []Review
 	var reviewsTotal int
 	var reviewsAverage float64
-	if reviewClient != nil {
-		fetchedReviews, err := reviewClient.GetProductReviews(ctx, id, zapLogger)
+	if h.reviewClient != nil {
+		fetchedReviews, err := h.reviewClient.GetProductReviews(ctx, id, zapLogger)
 		if err != nil {
 			// Soft-fail: log and continue with empty reviews
 			span.SetAttributes(attribute.Bool("reviews.fetch_failed", true))
