@@ -12,6 +12,7 @@ permissions:
   pull-requests: read
   id-token: write
   actions: read
+  security-events: write
 
 jobs:
   # 1. PR Checks (Branch Name + Slack "PR Opened")
@@ -42,35 +43,68 @@ jobs:
     secrets:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
-
-  # 4. Build (Main Only)
-  docker:
+  # 4a. Build & Push (Main Only)
+  docker-build:
     needs: [go-check, sonar]
     if: github.ref == 'refs/heads/main'
-    uses: duyhenryer/shared-workflows/.github/workflows/docker-build.yml@main
+    uses: duyhenryer/shared-workflows/.github/workflows/docker-build-go.yml@main
     with:
       image-name: 'product'
       push: true
     secrets: inherit
+    permissions:
+      contents: read
+      packages: write
+      actions: read
 
+  # 4b. Trivy Vulnerability Scan
+  trivy-scan:
+    needs: [docker-build]
+    uses: duyhenryer/shared-workflows/.github/workflows/trivy-scan.yml@main
+    with:
+      image-ref: ghcr.io/${{ github.repository }}/product@${{ needs.docker-build.outputs.digest }}
+      severity: 'CRITICAL,HIGH'
+      exit-code: '1'
+      ignore-unfixed: true
+    secrets: inherit
+    permissions:
+      contents: read
+      packages: read
+      security-events: write
 
-  # 4b. Build Migration Image
+  # 4c. Cosign Signing (only after scan passes)
+  docker-sign:
+    needs: [docker-build, trivy-scan]
+    uses: duyhenryer/shared-workflows/.github/workflows/docker-sign.yml@main
+    with:
+      tags: ${{ needs.docker-build.outputs.tags }}
+      digest: ${{ needs.docker-build.outputs.digest }}
+    secrets: inherit
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+
+  # 4d. Build Migration Image (build only, no scan/sign)
   docker-db-init:
     needs: [go-check, sonar]
     if: github.ref == 'refs/heads/main'
-    uses: duyhenryer/shared-workflows/.github/workflows/docker-build.yml@main
+    uses: duyhenryer/shared-workflows/.github/workflows/docker-build-go.yml@main
     with:
       image-name: 'product-init'
       dockerfile: 'db/migrations/Dockerfile'
       context: 'db/migrations'
       push: true
     secrets: inherit
-
+    permissions:
+      contents: read
+      packages: write
+      actions: read
 
   # 5. Final Status Notification + Google Sheets Reporting
   notify:
     if: always()
-    needs: [pr-checks, go-check, sonar, docker, docker-db-init]
+    needs: [pr-checks, go-check, sonar, docker-build, trivy-scan, docker-sign, docker-db-init]
     uses: duyhenryer/shared-workflows/.github/workflows/status.yml@main
     with:
       slack_channel_id: "C0AD82A9A74"
