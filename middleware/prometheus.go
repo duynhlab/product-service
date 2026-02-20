@@ -8,22 +8,18 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"go.opentelemetry.io/otel/trace"
 )
 
 var (
+	// RED method: this single histogram provides Rate, Errors, and Duration.
+	// _count = request rate, _count{code=~"5.."} = error rate, _bucket = latency percentiles.
 	requestDuration = promauto.NewHistogramVec(
 		prometheus.HistogramOpts{
-			Name:    "request_duration_seconds",
-			Help:    "Duration of HTTP requests in seconds",
-			Buckets: []float64{0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10},
-		},
-		[]string{"method", "path", "code"},
-	)
-
-	requestTotal = promauto.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "requests_total",
-			Help: "Total number of HTTP requests",
+			Name: "request_duration_seconds",
+			Help: "Duration of HTTP requests in seconds",
+			// SLO-tuned: extra buckets at 200ms, 300ms, 750ms for precision around the 500ms SLO threshold.
+			Buckets: []float64{0.005, 0.01, 0.025, 0.05, 0.1, 0.2, 0.3, 0.5, 0.75, 1, 2, 5, 10},
 		},
 		[]string{"method", "path", "code"},
 	)
@@ -53,23 +49,12 @@ var (
 		},
 		[]string{"method", "path", "code"},
 	)
-
-	errorRate = promauto.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "error_rate_total",
-			Help: "Total number of HTTP errors",
-		},
-		[]string{"method", "path", "code"},
-	)
 )
 
-// shouldCollectMetrics determines if metrics should be collected for a given path
-// Infrastructure endpoints (health checks, metrics) are excluded to prevent:
-// - High cardinality in Prometheus (millions of /health datapoints)
-// - Skewed metrics (79% of traffic was health checks in k6 tests)
-// - Storage waste (infrastructure traffic has no business value)
+// shouldCollectMetrics determines if metrics should be collected for a given path.
+// Infrastructure endpoints (health checks, metrics) are excluded to prevent
+// high cardinality, skewed metrics, and storage waste.
 func shouldCollectMetrics(path string) bool {
-	// Skip infrastructure endpoints
 	infrastructurePaths := []string{
 		"/health",
 		"/ready",
@@ -90,44 +75,40 @@ func shouldCollectMetrics(path string) bool {
 func PrometheusMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		start := time.Now()
-
 		method := c.Request.Method
-		path := c.Request.URL.Path
 
-		// Skip metrics collection for infrastructure endpoints
-		// These are handled by Kubernetes probes and monitoring systems
-		// Not representative of actual user/business traffic
-		if !shouldCollectMetrics(path) {
+		if !shouldCollectMetrics(c.Request.URL.Path) {
 			c.Next()
 			return
 		}
 
-		// Increment in-flight requests
+		// Resolve route pattern before processing for consistent labels across Inc/Dec.
+		// Gin resolves the route before middleware runs, so c.FullPath() is available here.
+		path := c.FullPath()
+		if path == "" {
+			path = "unknown"
+		}
+
 		requestsInFlight.WithLabelValues(method, path).Inc()
 
-		// Record request size
-		requestSize.WithLabelValues(method, path, "").Observe(float64(c.Request.ContentLength))
-
-		// Process request
 		c.Next()
 
-		// Calculate duration
 		duration := time.Since(start).Seconds()
 		statusCode := strconv.Itoa(c.Writer.Status())
 
-		// Record metrics
-		requestDuration.WithLabelValues(method, path, statusCode).Observe(duration)
-		requestTotal.WithLabelValues(method, path, statusCode).Inc()
-
-		// Record response size
-		responseSize.WithLabelValues(method, path, statusCode).Observe(float64(c.Writer.Size()))
-
-		// Record errors (5xx)
-		if c.Writer.Status() >= 500 {
-			errorRate.WithLabelValues(method, path, statusCode).Inc()
+		// Exemplar: attach traceID so Grafana can link a latency spike directly to a Tempo trace.
+		span := trace.SpanFromContext(c.Request.Context())
+		if span.SpanContext().HasTraceID() {
+			requestDuration.WithLabelValues(method, path, statusCode).(prometheus.ExemplarObserver).ObserveWithExemplar(
+				duration, prometheus.Labels{"traceID": span.SpanContext().TraceID().String()},
+			)
+		} else {
+			requestDuration.WithLabelValues(method, path, statusCode).Observe(duration)
 		}
 
-		// Decrement in-flight requests
+		requestSize.WithLabelValues(method, path, statusCode).Observe(float64(c.Request.ContentLength))
+		responseSize.WithLabelValues(method, path, statusCode).Observe(float64(c.Writer.Size()))
+
 		requestsInFlight.WithLabelValues(method, path).Dec()
 	}
 }
