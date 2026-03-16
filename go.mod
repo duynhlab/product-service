@@ -1,6 +1,6 @@
 module github.com/duynhne/product-service
 
-go 1.25.7
+go 1.25.8
 
 require (
 	github.com/gin-contrib/cors v1.7.6
