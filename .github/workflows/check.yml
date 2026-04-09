@@ -26,6 +26,9 @@ jobs:
 
   sonar:
     needs: go-check
+    permissions:
+      contents: read
+      pull-requests: read
     uses: duyhenryer/shared-workflows/.github/workflows/sonarqube.yml@main
     with:
       project-key: 'duynhlab_product-service'
