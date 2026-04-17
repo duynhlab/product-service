@@ -152,24 +152,13 @@ go build ./... && go test ./... && golangci-lint run --timeout=10m
 
 ## 🔌 API Reference
 
-### Cluster paths (what this service mounts)
+Routes are mounted directly at `/{service}/v1/{audience}/…` (Variant A — single URL shape across browser and in-cluster callers). Kong is pure pass-through for `public`; `internal` is reachable only via service DNS.
 
-| Method | Cluster path | Audience | Description |
-|--------|--------------|----------|-------------|
-| `GET` | `/api/v1/products` | public | List products (cached) |
-| `GET` | `/api/v1/products/:id` | public | Get product (cached) |
-| `GET` | `/api/v1/products/:id/details` | public | **Aggregated** product + reviews |
-| `POST` | `/api/v1/products` | internal | Create product (invalidates cache) — **in-cluster only, not on gateway** |
+| Method | Path | Audience | Description |
+|--------|------|----------|-------------|
+| `GET` | `/product/v1/public/products` | public | List products (cached) |
+| `GET` | `/product/v1/public/products/:id` | public | Get product (cached) |
+| `GET` | `/product/v1/public/products/:id/details` | public | **Aggregated** product + reviews |
+| `POST` | `/product/v1/internal/products` | internal | Create product (invalidates cache) — admin/seed only, via `http://product.product.svc.cluster.local:8080` |
 
-### Edge paths (what the browser sends)
-
-Kong in the `product` namespace rewrites `/product/v1/{audience}/products/...` → `/api/v1/products/...`. `POST /api/v1/products` is **not** exposed on the gateway; admin/seed jobs call it via `http://product.product.svc.cluster.local:8080/api/v1/products`.
-
-| Edge path (browser) | → Cluster path |
-|---------------------|----------------|
-| `GET gateway.duynhne.me/product/v1/public/products` | `GET /api/v1/products` |
-| `GET gateway.duynhne.me/product/v1/public/products/:id` | `GET /api/v1/products/:id` |
-| `GET gateway.duynhne.me/product/v1/public/products/:id/details` | `GET /api/v1/products/:id/details` |
-| *(no edge path)* | `POST /api/v1/products` — internal only |
-
-Convention + rewrite rule: [`homelab/docs/api/api-naming-convention.md`](https://github.com/duynhlab/homelab/blob/main/docs/api/api-naming-convention.md).
+Full convention + inventory: [`homelab/docs/api/api-naming-convention.md`](https://github.com/duynhlab/homelab/blob/main/docs/api/api-naming-convention.md).

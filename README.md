@@ -11,14 +11,14 @@ Product catalog microservice with search, filtering, and Valkey caching.
 
 ## API Endpoints
 
-> **Browser callers** hit `https://gateway.duynhne.me/product/v1/public/products/…`; Kong rewrites to the cluster paths below. `POST /api/v1/products` stays internal (admin/seed only — not on the gateway). See [homelab naming convention](https://github.com/duynhlab/homelab/blob/main/docs/api/api-naming-convention.md).
+All routes follow Variant A naming — single path for browser and in-cluster callers. See [homelab naming convention](https://github.com/duynhlab/homelab/blob/main/docs/api/api-naming-convention.md).
 
-| Method | Cluster path | Edge path (via gateway) |
-|--------|--------------|-------------------------|
-| `GET` | `/api/v1/products` | `/product/v1/public/products` |
-| `GET` | `/api/v1/products/:id` | `/product/v1/public/products/:id` |
-| `GET` | `/api/v1/products/:id/details` | `/product/v1/public/products/:id/details` |
-| `POST` | `/api/v1/products` | *(internal — not on gateway)* |
+| Method | Path | Audience |
+|--------|------|----------|
+| `GET` | `/product/v1/public/products` | public |
+| `GET` | `/product/v1/public/products/:id` | public |
+| `GET` | `/product/v1/public/products/:id/details` | public (aggregates reviews) |
+| `POST` | `/product/v1/internal/products` | internal (admin/seed; in-cluster only) |
 
 ## Tech Stack
 
