@@ -152,9 +152,24 @@ go build ./... && go test ./... && golangci-lint run --timeout=10m
 
 ## 🔌 API Reference
 
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/api/v1/products` | List products (cached) |
-| `GET` | `/api/v1/products/:id` | Get product (cached) |
-| `GET` | `/api/v1/products/:id/details` | **Aggregated** product + reviews |
-| `POST` | `/api/v1/products` | Create product (invalidates cache) |
+### Cluster paths (what this service mounts)
+
+| Method | Cluster path | Audience | Description |
+|--------|--------------|----------|-------------|
+| `GET` | `/api/v1/products` | public | List products (cached) |
+| `GET` | `/api/v1/products/:id` | public | Get product (cached) |
+| `GET` | `/api/v1/products/:id/details` | public | **Aggregated** product + reviews |
+| `POST` | `/api/v1/products` | internal | Create product (invalidates cache) — **in-cluster only, not on gateway** |
+
+### Edge paths (what the browser sends)
+
+Kong in the `product` namespace rewrites `/product/v1/{audience}/products/...` → `/api/v1/products/...`. `POST /api/v1/products` is **not** exposed on the gateway; admin/seed jobs call it via `http://product.product.svc.cluster.local:8080/api/v1/products`.
+
+| Edge path (browser) | → Cluster path |
+|---------------------|----------------|
+| `GET gateway.duynhne.me/product/v1/public/products` | `GET /api/v1/products` |
+| `GET gateway.duynhne.me/product/v1/public/products/:id` | `GET /api/v1/products/:id` |
+| `GET gateway.duynhne.me/product/v1/public/products/:id/details` | `GET /api/v1/products/:id/details` |
+| *(no edge path)* | `POST /api/v1/products` — internal only |
+
+Convention + rewrite rule: [`homelab/docs/api/api-naming-convention.md`](https://github.com/duynhlab/homelab/blob/main/docs/api/api-naming-convention.md).
