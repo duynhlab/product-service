@@ -152,9 +152,13 @@ go build ./... && go test ./... && golangci-lint run --timeout=10m
 
 ## 🔌 API Reference
 
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/api/v1/products` | List products (cached) |
-| `GET` | `/api/v1/products/:id` | Get product (cached) |
-| `GET` | `/api/v1/products/:id/details` | **Aggregated** product + reviews |
-| `POST` | `/api/v1/products` | Create product (invalidates cache) |
+Routes are mounted directly at `/{service}/v1/{audience}/…` (Variant A — single URL shape across browser and in-cluster callers). Kong is pure pass-through for `public`; `internal` is reachable only via service DNS.
+
+| Method | Path | Audience | Description |
+|--------|------|----------|-------------|
+| `GET` | `/product/v1/public/products` | public | List products (cached) |
+| `GET` | `/product/v1/public/products/:id` | public | Get product (cached) |
+| `GET` | `/product/v1/public/products/:id/details` | public | **Aggregated** product + reviews |
+| `POST` | `/product/v1/internal/products` | internal | Create product (invalidates cache) — admin/seed only, via `http://product.product.svc.cluster.local:8080` |
+
+Full convention + inventory: [`homelab/docs/api/api-naming-convention.md`](https://github.com/duynhlab/homelab/blob/main/docs/api/api-naming-convention.md).

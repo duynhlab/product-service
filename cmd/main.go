@@ -168,14 +168,12 @@ func main() {
 	// Metrics endpoint
 	r.GET("/metrics", gin.WrapH(promhttp.Handler()))
 
-	// API v1 (canonical API - frontend-aligned)
-	apiV1 := r.Group("/api/v1")
-	{
-		apiV1.GET("/products", productHandler.ListProducts)
-		apiV1.GET("/products/:id", productHandler.GetProduct)
-		apiV1.GET("/products/:id/details", productHandler.GetProductDetails) // Aggregation endpoint
-		apiV1.POST("/products", productHandler.CreateProduct)
-	}
+	// Product v1 routes — Variant A edge naming (see api-naming-convention.md)
+	r.GET("/product/v1/public/products", productHandler.ListProducts)
+	r.GET("/product/v1/public/products/:id", productHandler.GetProduct)
+	r.GET("/product/v1/public/products/:id/details", productHandler.GetProductDetails) // Aggregation endpoint
+	// Internal: admin/seed only. Not routed through Kong.
+	r.POST("/product/v1/internal/products", productHandler.CreateProduct)
 
 	// Create HTTP server (ReadHeaderTimeout mitigates Slowloris)
 	srv := &http.Server{

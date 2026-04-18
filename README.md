@@ -11,12 +11,14 @@ Product catalog microservice with search, filtering, and Valkey caching.
 
 ## API Endpoints
 
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/api/v1/products` | List products (cached) |
-| `GET` | `/api/v1/products/:id` | Get product (cached) |
-| `GET` | `/api/v1/products/:id/details` | Aggregated details |
-| `POST` | `/api/v1/products` | Create product |
+All routes follow Variant A naming — single path for browser and in-cluster callers. See [homelab naming convention](https://github.com/duynhlab/homelab/blob/main/docs/api/api-naming-convention.md).
+
+| Method | Path | Audience |
+|--------|------|----------|
+| `GET` | `/product/v1/public/products` | public |
+| `GET` | `/product/v1/public/products/:id` | public |
+| `GET` | `/product/v1/public/products/:id/details` | public (aggregates reviews) |
+| `POST` | `/product/v1/internal/products` | internal (admin/seed; in-cluster only) |
 
 ## Tech Stack
 

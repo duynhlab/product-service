@@ -57,8 +57,8 @@ func (c *ReviewClient) GetProductReviews(ctx context.Context, productID string, 
 	))
 	defer span.End()
 
-	// Build request URL
-	reqURL := fmt.Sprintf("%s/api/v1/reviews?product_id=%s", c.baseURL, url.QueryEscape(productID))
+	// Build request URL — review-service public listing endpoint
+	reqURL := fmt.Sprintf("%s/review/v1/public/reviews?product_id=%s", c.baseURL, url.QueryEscape(productID))
 
 	// Create request
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
