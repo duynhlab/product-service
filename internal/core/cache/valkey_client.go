@@ -55,7 +55,18 @@ func (c *ValkeyCacheClient) Set(ctx context.Context, key string, value []byte, t
 
 // SetNX stores a value in cache only if the key does not exist
 func (c *ValkeyCacheClient) SetNX(ctx context.Context, key string, value []byte, ttl time.Duration) (bool, error) {
-	return c.client.SetNX(ctx, key, value, ttl).Result()
+	result, err := c.client.SetArgs(ctx, key, value, redis.SetArgs{
+		Mode: "NX",
+		TTL:  ttl,
+	}).Result()
+	if errors.Is(err, redis.Nil) {
+		// Key already exists - NX condition not met
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return result == "OK", nil
 }
 
 // Delete removes a key from cache
