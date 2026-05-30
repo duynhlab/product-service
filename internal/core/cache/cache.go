@@ -26,6 +26,10 @@ type CacheClient interface {
 	// Delete removes a key from cache
 	Delete(ctx context.Context, key string) error
 
+	// DeleteByPattern removes all keys matching the given glob-style pattern.
+	// Uses a non-blocking cursor scan so it is safe on large keyspaces.
+	DeleteByPattern(ctx context.Context, pattern string) error
+
 	// Close closes the cache connection
 	Close() error
 }

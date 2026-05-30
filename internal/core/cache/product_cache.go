@@ -208,23 +208,8 @@ func (c *ProductCache) InvalidateProduct(ctx context.Context, id string) error {
 }
 
 // InvalidateProductList deletes all product list cache keys
-// Note: This is a simple implementation that deletes common patterns
-// For production, consider using Redis SCAN or maintaining a key index
+// Uses a SCAN over the "product:list:*" pattern so every cached list
+// variant is invalidated, not just a hardcoded subset.
 func (c *ProductCache) InvalidateProductList(ctx context.Context) error {
-	// For now, we'll delete specific common patterns
-	// A more sophisticated implementation would use Redis SCAN
-	commonKeys := []string{
-		"product:list:all:none:created_at:desc:1:20",
-		"product:list:all:none:created_at:desc:1:30",
-		"product:list:all:none:price:asc:1:20",
-		"product:list:all:none:price:desc:1:20",
-	}
-
-	for _, key := range commonKeys {
-		_ = c.client.Delete(ctx, key) // Ignore errors for non-existent keys
-	}
-
-	// TODO: Implement proper pattern matching using Redis SCAN if needed
-	// For now, this simple approach works for learning purposes
-	return nil
+	return c.client.DeleteByPattern(ctx, "product:list:*")
 }

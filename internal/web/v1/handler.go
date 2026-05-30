@@ -208,15 +208,12 @@ func (h *ProductHandler) GetProductDetails(c *gin.Context) {
 		reviews = []Review{}
 	}
 
-	// TODO: Get stock from inventory service when available
-	// stock, _ := inventoryService.GetStock(ctx, id)
-
 	// Aggregate response
 	response := gin.H{
 		"product": product,
 		"stock": gin.H{
-			"available": true, // Mock data
-			"quantity":  50,   // Mock data
+			"available": product.StockQuantity > 0,
+			"quantity":  product.StockQuantity,
 		},
 		"reviews": reviews,
 		"reviews_summary": gin.H{
