@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/duynhne/product-service/internal/core/domain"
 	"github.com/jackc/pgx/v5"
@@ -27,7 +28,7 @@ func NewPostgresProductRepository(pool *pgxpool.Pool) *PostgresProductRepository
 // FindByID retrieves a product by ID
 func (r *PostgresProductRepository) FindByID(ctx context.Context, id string) (*domain.Product, error) {
 	query := `
-		SELECT p.id, p.name, p.description, p.price, COALESCE(c.name, 'Uncategorized') as category
+		SELECT p.id, p.name, p.description, p.price, COALESCE(c.name, 'Uncategorized') as category, p.stock_quantity
 		FROM products p
 		LEFT JOIN categories c ON p.category_id = c.id
 		WHERE p.id = $1
@@ -36,7 +37,7 @@ func (r *PostgresProductRepository) FindByID(ctx context.Context, id string) (*d
 	var product domain.Product
 	var idInt int
 	err := r.pool.QueryRow(ctx, query, id).Scan(
-		&idInt, &product.Name, &product.Description, &product.Price, &product.Category,
+		&idInt, &product.Name, &product.Description, &product.Price, &product.Category, &product.StockQuantity,
 	)
 
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -86,7 +87,7 @@ func (r *PostgresProductRepository) FindAll(ctx context.Context, filters domain.
 		}
 	}
 
-	order := filters.Order
+	order := strings.ToUpper(strings.TrimSpace(filters.Order))
 	if order != "ASC" && order != "DESC" {
 		order = "DESC"
 	}
@@ -109,16 +110,20 @@ func (r *PostgresProductRepository) FindAll(ctx context.Context, filters domain.
 	}
 	defer rows.Close()
 
-	var products []domain.Product
+	products := []domain.Product{}
 	for rows.Next() {
 		var product domain.Product
 		var idInt int
 		err := rows.Scan(&idInt, &product.Name, &product.Description, &product.Price, &product.Category)
 		if err != nil {
-			continue
+			return nil, err
 		}
 		product.ID = strconv.Itoa(idInt)
 		products = append(products, product)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 
 	return products, nil
@@ -172,16 +177,20 @@ func (r *PostgresProductRepository) FindRelatedProducts(ctx context.Context, pro
 	}
 	defer rows.Close()
 
-	var products []domain.Product
+	products := []domain.Product{}
 	for rows.Next() {
 		var product domain.Product
 		var idInt int
 		err := rows.Scan(&idInt, &product.Name, &product.Price)
 		if err != nil {
-			continue
+			return nil, err
 		}
 		product.ID = strconv.Itoa(idInt)
 		products = append(products, product)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 
 	return products, nil

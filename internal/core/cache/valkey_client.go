@@ -74,6 +74,35 @@ func (c *ValkeyCacheClient) Delete(ctx context.Context, key string) error {
 	return c.client.Del(ctx, key).Err()
 }
 
+// DeleteByPattern removes all keys matching pattern using a SCAN iterator.
+// Matched keys are removed with UNLINK (non-blocking) in batches.
+func (c *ValkeyCacheClient) DeleteByPattern(ctx context.Context, pattern string) error {
+	const scanCount = 100
+
+	iter := c.client.Scan(ctx, 0, pattern, scanCount).Iterator()
+	batch := make([]string, 0, scanCount)
+	for iter.Next(ctx) {
+		batch = append(batch, iter.Val())
+		if len(batch) >= scanCount {
+			if err := c.client.Unlink(ctx, batch...).Err(); err != nil {
+				return err
+			}
+			batch = batch[:0]
+		}
+	}
+	if err := iter.Err(); err != nil {
+		return err
+	}
+
+	if len(batch) > 0 {
+		if err := c.client.Unlink(ctx, batch...).Err(); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 // Close closes the cache connection
 func (c *ValkeyCacheClient) Close() error {
 	return c.client.Close()

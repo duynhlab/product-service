@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -59,6 +60,18 @@ func (m *MockCacheClient) Delete(ctx context.Context, key string) error {
 	defer m.mu.Unlock()
 	delete(m.data, key)
 	delete(m.locks, key) // Also release lock if deleting key (simplified)
+	return nil
+}
+
+func (m *MockCacheClient) DeleteByPattern(ctx context.Context, pattern string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	prefix := strings.TrimSuffix(pattern, "*")
+	for key := range m.data {
+		if strings.HasPrefix(key, prefix) {
+			delete(m.data, key)
+		}
+	}
 	return nil
 }
 
