@@ -2,18 +2,15 @@ package v1
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
-	"net/url"
 	"time"
 
+	reviewv1 "github.com/duynhlab/pkg/proto/review/v1"
 	"github.com/duynhlab/product-service/middleware"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
+	"google.golang.org/grpc"
 )
 
 // Review represents a review from the review service
@@ -27,28 +24,17 @@ type Review struct {
 	CreatedAt *string `json:"created_at,omitempty"`
 }
 
-// ReviewClient fetches reviews from the review service
+// ReviewClient fetches reviews from the review service over gRPC.
 type ReviewClient struct {
-	baseURL    string
-	httpClient *http.Client
-	propagator propagation.TextMapPropagator
+	client reviewv1.ReviewServiceClient
 }
 
-// NewReviewClient creates a new ReviewClient
-func NewReviewClient(baseURL string) *ReviewClient {
-	return &ReviewClient{
-		baseURL: baseURL,
-		httpClient: &http.Client{
-			Timeout: 3 * time.Second, // 3s timeout for inter-service calls
-		},
-		propagator: propagation.NewCompositeTextMapPropagator(
-			propagation.TraceContext{},
-			propagation.Baggage{},
-		),
-	}
+// NewReviewClient wraps a gRPC connection (typically from grpcx.Dial).
+func NewReviewClient(conn *grpc.ClientConn) *ReviewClient {
+	return &ReviewClient{client: reviewv1.NewReviewServiceClient(conn)}
 }
 
-// GetProductReviews fetches reviews for a product from the review service
+// GetProductReviews fetches reviews for a product from the review service.
 func (c *ReviewClient) GetProductReviews(ctx context.Context, productID string, logger *zap.Logger) ([]Review, error) {
 	ctx, span := middleware.StartSpan(ctx, "review_client.get_product_reviews", trace.WithAttributes(
 		attribute.String("layer", "web"),
@@ -57,54 +43,25 @@ func (c *ReviewClient) GetProductReviews(ctx context.Context, productID string, 
 	))
 	defer span.End()
 
-	// Build request URL — review-service public listing endpoint
-	reqURL := fmt.Sprintf("%s/review/v1/public/reviews?product_id=%s", c.baseURL, url.QueryEscape(productID))
+	// grpcx provides a default RPC deadline; bound it explicitly here too,
+	// matching the 3s budget the REST client used for inter-service calls.
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
 
-	// Create request
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
-	if err != nil {
-		span.RecordError(err)
-		logger.Error("Failed to create request to review service", zap.Error(err))
-		return nil, fmt.Errorf("create request: %w", err)
-	}
-
-	// Inject trace context headers for distributed tracing
-	c.propagator.Inject(ctx, propagation.HeaderCarrier(req.Header))
-
-	// Make the request
-	span.SetAttributes(attribute.String("http.url", reqURL))
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.client.GetProductReviews(ctx, &reviewv1.GetProductReviewsRequest{ProductId: productID})
 	if err != nil {
 		span.RecordError(err)
 		span.SetAttributes(attribute.Bool("review_service.available", false))
-		logger.Error("Failed to call review service", zap.Error(err), zap.String("url", reqURL))
+		logger.Error("Failed to call review service", zap.Error(err), zap.String("product_id", productID))
 		return nil, fmt.Errorf("call review service: %w", err)
 	}
-	defer resp.Body.Close()
 
-	span.SetAttributes(
-		attribute.Int("http.status_code", resp.StatusCode),
-		attribute.Bool("review_service.available", true),
-	)
+	span.SetAttributes(attribute.Bool("review_service.available", true))
 
-	// Handle non-2xx responses
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		err := fmt.Errorf("review service returned status %d: %s", resp.StatusCode, string(body))
-		span.RecordError(err)
-		logger.Warn("Review service returned non-OK status",
-			zap.Int("status", resp.StatusCode),
-			zap.String("body", string(body)),
-		)
-		return nil, err
-	}
-
-	// Parse response
-	var reviews []Review
-	if err := json.NewDecoder(resp.Body).Decode(&reviews); err != nil {
-		span.RecordError(err)
-		logger.Error("Failed to decode review service response", zap.Error(err))
-		return nil, fmt.Errorf("decode response: %w", err)
+	protoReviews := resp.GetReviews()
+	reviews := make([]Review, 0, len(protoReviews))
+	for _, r := range protoReviews {
+		reviews = append(reviews, reviewFromProto(r))
 	}
 
 	span.SetAttributes(attribute.Int("reviews.count", len(reviews)))
@@ -114,6 +71,25 @@ func (c *ReviewClient) GetProductReviews(ctx context.Context, productID string, 
 	)
 
 	return reviews, nil
+}
+
+// reviewFromProto maps a protobuf review to the local Review, identically to how
+// the REST client decoded the JSON review.
+func reviewFromProto(r *reviewv1.Review) Review {
+	var createdAt *string
+	if v := r.GetCreatedAt(); v != "" {
+		createdAt = &v
+	}
+
+	return Review{
+		ID:        r.GetId(),
+		ProductID: r.GetProductId(),
+		UserID:    r.GetUserId(),
+		Rating:    int(r.GetRating()),
+		Title:     r.GetTitle(),
+		Comment:   r.GetComment(),
+		CreatedAt: createdAt,
+	}
 }
 
 // ComputeReviewsSummary computes total and average rating from reviews

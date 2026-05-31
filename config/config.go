@@ -35,19 +35,19 @@ const defaultServiceName = "unknown"
 
 // Config holds all configuration for a microservice
 type Config struct {
-	Service          ServiceConfig   // Service-specific settings (port, name, version)
-	Tracing          TracingConfig   // OpenTelemetry/Tempo configuration
-	Profiling        ProfilingConfig // Pyroscope continuous profiling
-	Logging          LoggingConfig   // Structured logging (Zap)
-	Metrics          MetricsConfig   // Prometheus metrics
-	Database         DatabaseConfig  // PostgreSQL database configuration
-	Cache            CacheConfig     // Valkey/Redis cache configuration
-	ShutdownTimeout  int             // Graceful shutdown timeout in seconds - from SHUTDOWN_TIMEOUT env (default: 10)
+	Service         ServiceConfig   // Service-specific settings (port, name, version)
+	Tracing         TracingConfig   // OpenTelemetry/Tempo configuration
+	Profiling       ProfilingConfig // Pyroscope continuous profiling
+	Logging         LoggingConfig   // Structured logging (Zap)
+	Metrics         MetricsConfig   // Prometheus metrics
+	Database        DatabaseConfig  // PostgreSQL database configuration
+	Cache           CacheConfig     // Valkey/Redis cache configuration
+	ShutdownTimeout int             // Graceful shutdown timeout in seconds - from SHUTDOWN_TIMEOUT env (default: 10)
 	// ReadinessDrainDelay: delay after failing readiness before shutting down the HTTP server.
 	// This gives Kubernetes/Service routing time to stop sending new traffic.
 	// From READINESS_DRAIN_DELAY env (default: 5s, max: 30s).
 	ReadinessDrainDelay int
-	ReviewServiceURL string          // Review service URL for aggregation - from REVIEW_SERVICE_URL env
+	ReviewGRPCAddr      string // Review service gRPC target for aggregation - from REVIEW_GRPC_ADDR env
 }
 
 // ServiceConfig defines basic service configuration
@@ -177,9 +177,9 @@ func Load() *Config {
 			TTLProductList:   getEnvDuration("CACHE_TTL_PRODUCT_LIST", 5*time.Minute),
 			TTLProductDetail: getEnvDuration("CACHE_TTL_PRODUCT_DETAIL", 10*time.Minute),
 		},
-		ShutdownTimeout:  getEnvDurationSeconds("SHUTDOWN_TIMEOUT", 10),
+		ShutdownTimeout:     getEnvDurationSeconds("SHUTDOWN_TIMEOUT", 10),
 		ReadinessDrainDelay: getEnvDurationSecondsWithMax("READINESS_DRAIN_DELAY", 5, 30),
-		ReviewServiceURL: getEnv("REVIEW_SERVICE_URL", "http://review.review.svc.cluster.local:8080"),
+		ReviewGRPCAddr:      getEnv("REVIEW_GRPC_ADDR", "dns:///review.review.svc.cluster.local:9090"),
 	}
 }
 

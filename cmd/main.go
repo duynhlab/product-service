@@ -13,6 +13,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap"
 
+	"github.com/duynhlab/pkg/grpcx"
 	"github.com/duynhlab/product-service/config"
 	database "github.com/duynhlab/product-service/internal/core"
 	"github.com/duynhlab/product-service/internal/core/cache"
@@ -119,9 +120,15 @@ func main() {
 	productService := logicv1.NewProductService(productRepo, productCache)
 	logger.Info("Product service initialized")
 
-	// Initialize review service client for aggregation in product details endpoint
-	reviewClient := v1.NewReviewClient(cfg.ReviewServiceURL)
-	logger.Info("Review client initialized", zap.String("review_service_url", cfg.ReviewServiceURL))
+	// Initialize review service gRPC client for aggregation in product details endpoint
+	reviewConn, err := grpcx.Dial(cfg.ReviewGRPCAddr)
+	if err != nil {
+		logger.Error("Failed to dial review gRPC", zap.String("addr", cfg.ReviewGRPCAddr), zap.Error(err))
+		return
+	}
+	defer func() { _ = reviewConn.Close() }()
+	reviewClient := v1.NewReviewClient(reviewConn)
+	logger.Info("Review gRPC client initialized", zap.String("review_grpc_addr", cfg.ReviewGRPCAddr))
 
 	// Initialize Web handler with dependency injection
 	productHandler := v1.NewProductHandler(productService, reviewClient)
