@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/duynhne/product-service/internal/core/domain"
+	"github.com/duynhlab/product-service/internal/core/domain"
 )
 
 // ProductCache wraps CacheClient with Product-specific operations

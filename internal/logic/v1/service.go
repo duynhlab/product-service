@@ -4,9 +4,9 @@ import (
 	"context"
 	"errors"
 
-	"github.com/duynhne/product-service/internal/core/cache"
-	"github.com/duynhne/product-service/internal/core/domain"
-	"github.com/duynhne/product-service/middleware"
+	"github.com/duynhlab/product-service/internal/core/cache"
+	"github.com/duynhlab/product-service/internal/core/domain"
+	"github.com/duynhlab/product-service/middleware"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 )

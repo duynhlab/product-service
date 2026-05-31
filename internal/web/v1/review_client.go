@@ -9,7 +9,7 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/duynhne/product-service/middleware"
+	"github.com/duynhlab/product-service/middleware"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"

@@ -6,9 +6,9 @@ import (
 
 	"strconv"
 
-	"github.com/duynhne/product-service/internal/core/domain"
-	logicv1 "github.com/duynhne/product-service/internal/logic/v1"
-	"github.com/duynhne/product-service/middleware"
+	"github.com/duynhlab/product-service/internal/core/domain"
+	logicv1 "github.com/duynhlab/product-service/internal/logic/v1"
+	"github.com/duynhlab/product-service/middleware"
 	"github.com/gin-gonic/gin"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"

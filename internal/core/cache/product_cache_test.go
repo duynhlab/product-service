@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/duynhne/product-service/internal/core/domain"
+	"github.com/duynhlab/product-service/internal/core/domain"
 )
 
 // MockCacheClient for testing
