@@ -13,13 +13,13 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap"
 
-	"github.com/duynhne/product-service/config"
-	database "github.com/duynhne/product-service/internal/core"
-	"github.com/duynhne/product-service/internal/core/cache"
-	"github.com/duynhne/product-service/internal/core/repository"
-	logicv1 "github.com/duynhne/product-service/internal/logic/v1"
-	v1 "github.com/duynhne/product-service/internal/web/v1"
-	"github.com/duynhne/product-service/middleware"
+	"github.com/duynhlab/product-service/config"
+	database "github.com/duynhlab/product-service/internal/core"
+	"github.com/duynhlab/product-service/internal/core/cache"
+	"github.com/duynhlab/product-service/internal/core/repository"
+	logicv1 "github.com/duynhlab/product-service/internal/logic/v1"
+	v1 "github.com/duynhlab/product-service/internal/web/v1"
+	"github.com/duynhlab/product-service/middleware"
 )
 
 //nolint:gocognit,funlen // main orchestrates startup/shutdown; single func is intentional

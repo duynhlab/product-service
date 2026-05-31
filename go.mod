@@ -1,4 +1,4 @@
-module github.com/duynhne/product-service
+module github.com/duynhlab/product-service
 
 go 1.26.2
 
@@ -77,4 +77,4 @@ require (
 )
 
 // For local development with pkg
-// replace github.com/duynhne/pkg => ../pkg
+// replace github.com/duynhlab/pkg => ../pkg

@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/duynhne/product-service/internal/core/domain"
+	"github.com/duynhlab/product-service/internal/core/domain"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
