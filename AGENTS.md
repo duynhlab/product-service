@@ -4,7 +4,7 @@
 
 ## 📋 Overview
 
-Product catalog microservice. Manages product listings, search, and aggregated product details with caching.
+Product catalog microservice. Manages product listings, search, and aggregated product details with Valkey caching and gRPC review aggregation. It is a gRPC **client** (no gRPC server) that calls `review-service` for the product-details endpoint.
 
 ## 🏗️ Architecture Guidelines
 
@@ -51,7 +51,7 @@ Web -> Logic -> Core (one-way only, never reverse)
 - Write SQL or call `database.GetPool()` in Logic layer
 - Import `gin` or handle HTTP in Logic layer
 - Put business rules in Web layer (Web only translates and delegates)
-- Call Logic functions directly from another service (use HTTP aggregation in Web layer)
+- Call Logic functions directly from another service (cross-service calls go over gRPC; aggregation lives in the Web layer)
 - Skip the Logic layer (Web must not call Core/repository directly)
 
 ### Directory Structure
@@ -66,9 +66,11 @@ product-service/
 │   │   ├── cache/           # Valkey caching layer
 │   │   ├── database.go
 │   │   └── domain/
-│   ├── logic/v1/service.go
-│   └── web/v1/handler.go
-├── middleware/
+│   ├── logic/v1/service.go      # Cache-Aside product reads (NO SQL)
+│   └── web/v1/
+│       ├── handler.go           # HTTP + aggregation (product details)
+│       └── review_client.go     # gRPC client for review-service + summary
+├── middleware/                  # CORS, tracing, logging, prometheus, profiling
 └── Dockerfile
 ```
 
@@ -110,10 +112,12 @@ go build ./... && go test ./... && golangci-lint run --timeout=10m
 
 | Component | Technology |
 |-----------|------------|
+| Language | Go 1.26 |
 | Framework | Gin |
-| Database | PostgreSQL 18 via pgx/v5 |
+| Database | PostgreSQL via pgx/v5 |
 | Caching | Valkey (go-redis/v9) |
-| Tracing | OpenTelemetry |
+| East-west RPC | gRPC client via `github.com/duynhlab/pkg/grpcx` |
+| Observability | `github.com/duynhlab/pkg/obsx` (OTel→Prometheus metrics, trace correlation), OpenTelemetry tracing, Pyroscope profiling |
 
 ## 🏗️ Infrastructure Details
 
@@ -142,6 +146,33 @@ go build ./... && go test ./... && golangci-lint run --timeout=10m
 - `product:list:{category}:{search}:{sort}:{order}:{page}:{limit}` - product list
 
 **Stampede Prevention:** Distributed locking (SETNX) ensures only 1 request hits DB on cache miss.
+
+### East-West gRPC (review aggregation)
+
+product-service is a gRPC **client only** (no gRPC server). The product-details handler
+(`internal/web/v1/handler.go` → `GetProductDetails`) aggregates reviews by calling
+`review.v1.ReviewService/GetProductReviews` on review-service over gRPC. This is the official
+east-west transport (replaced the earlier HTTP call). The rating summary (total + average) is
+computed in the Web layer via `ComputeReviewsSummary` in `review_client.go`.
+
+| Component | Value |
+|-----------|-------|
+| **Role** | gRPC client (calls review-service) |
+| **Method** | `review.v1.ReviewService/GetProductReviews` |
+| **Target env** | `REVIEW_GRPC_ADDR` (default `dns:///review.review.svc.cluster.local:9090`) |
+| **Dialer** | `grpcx.Dial` (otelgrpc client stats handler) |
+| **Per-call deadline** | 3s |
+| **Failure mode** | Soft-fail — empty reviews + zeroed summary when review-service is down |
+
+### Observability (`pkg/obsx`)
+
+| Concern | Implementation |
+|---------|----------------|
+| **gRPC metrics** | `obsx.SetupMetrics()` bridges OTel metrics from the otelgrpc client handler into the default Prometheus registry → gRPC client RED metrics (`rpc_client_*`) appear on the **existing** `/metrics` endpoint (no separate port). |
+| **HTTP metrics** | `PrometheusMiddleware` emits `request_duration_seconds`, `requests_in_flight`, request/response size; scraped by the platform ServiceMonitor on `/metrics`. |
+| **Logging** | `LoggingMiddleware` uses `obsx.TraceIDFromContext` for log↔trace correlation (falls back to header/generated ID when no span). |
+| **Tracing** | OpenTelemetry → OTel Collector (Tempo). |
+| **Middleware order** | CORS → tracing → logging → metrics. |
 
 ### Graceful Shutdown
 
