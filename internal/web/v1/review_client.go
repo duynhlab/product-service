@@ -6,23 +6,13 @@ import (
 	"time"
 
 	reviewv1 "github.com/duynhlab/pkg/proto/review/v1"
+	logicv1 "github.com/duynhlab/product-service/internal/logic/v1"
 	"github.com/duynhlab/product-service/middleware"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 )
-
-// Review represents a review from the review service
-type Review struct {
-	ID        string  `json:"id"`
-	ProductID string  `json:"product_id"`
-	UserID    string  `json:"user_id"`
-	Rating    int     `json:"rating"`
-	Title     string  `json:"title"`
-	Comment   string  `json:"comment"`
-	CreatedAt *string `json:"created_at,omitempty"`
-}
 
 // ReviewClient fetches reviews from the review service over gRPC.
 type ReviewClient struct {
@@ -35,7 +25,7 @@ func NewReviewClient(conn *grpc.ClientConn) *ReviewClient {
 }
 
 // GetProductReviews fetches reviews for a product from the review service.
-func (c *ReviewClient) GetProductReviews(ctx context.Context, productID string, logger *zap.Logger) ([]Review, error) {
+func (c *ReviewClient) GetProductReviews(ctx context.Context, productID string, logger *zap.Logger) ([]logicv1.Review, error) {
 	ctx, span := middleware.StartSpan(ctx, "review_client.get_product_reviews", trace.WithAttributes(
 		attribute.String("layer", "web"),
 		attribute.String("product.id", productID),
@@ -59,7 +49,7 @@ func (c *ReviewClient) GetProductReviews(ctx context.Context, productID string, 
 	span.SetAttributes(attribute.Bool("review_service.available", true))
 
 	protoReviews := resp.GetReviews()
-	reviews := make([]Review, 0, len(protoReviews))
+	reviews := make([]logicv1.Review, 0, len(protoReviews))
 	for _, r := range protoReviews {
 		reviews = append(reviews, reviewFromProto(r))
 	}
@@ -75,13 +65,13 @@ func (c *ReviewClient) GetProductReviews(ctx context.Context, productID string, 
 
 // reviewFromProto maps a protobuf review to the local Review, identically to how
 // the REST client decoded the JSON review.
-func reviewFromProto(r *reviewv1.Review) Review {
+func reviewFromProto(r *reviewv1.Review) logicv1.Review {
 	var createdAt *string
 	if v := r.GetCreatedAt(); v != "" {
 		createdAt = &v
 	}
 
-	return Review{
+	return logicv1.Review{
 		ID:        r.GetId(),
 		ProductID: r.GetProductId(),
 		UserID:    r.GetUserId(),
@@ -90,19 +80,4 @@ func reviewFromProto(r *reviewv1.Review) Review {
 		Comment:   r.GetComment(),
 		CreatedAt: createdAt,
 	}
-}
-
-// ComputeReviewsSummary computes total and average rating from reviews
-func ComputeReviewsSummary(reviews []Review) (total int, averageRating float64) {
-	total = len(reviews)
-	if total == 0 {
-		return 0, 0.0
-	}
-
-	sum := 0
-	for _, r := range reviews {
-		sum += r.Rating
-	}
-	averageRating = float64(sum) / float64(total)
-	return total, averageRating
 }
