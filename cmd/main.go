@@ -14,6 +14,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/duynhlab/pkg/grpcx"
+	"github.com/duynhlab/pkg/obsx"
 	"github.com/duynhlab/product-service/config"
 	database "github.com/duynhlab/product-service/internal/core"
 	"github.com/duynhlab/product-service/internal/core/cache"
@@ -59,6 +60,17 @@ func main() {
 		}
 	} else {
 		logger.Info("Tracing disabled (TRACING_ENABLED=false)")
+	}
+
+	// Initialize OTel metrics (otelgrpc RED metrics exported via the existing /metrics endpoint)
+	if cfg.Metrics.Enabled {
+		shutdownMetrics, err := obsx.SetupMetrics()
+		if err != nil {
+			logger.Warn("Failed to initialize metrics", zap.Error(err))
+		} else {
+			logger.Info("Metrics initialized")
+			defer func() { _ = shutdownMetrics(context.Background()) }()
+		}
 	}
 
 	// Initialize Pyroscope profiling

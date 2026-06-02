@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"time"
 
+	"github.com/duynhlab/pkg/obsx"
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -68,8 +69,12 @@ func LoggingMiddleware(logger *zap.Logger) gin.HandlerFunc {
 		path := c.Request.URL.Path
 		method := c.Request.Method
 
-		// Get or generate trace-id
-		traceID := GetTraceID(c)
+		// Prefer the active OTel span's trace-id for log/trace correlation;
+		// fall back to header-derived or generated id when no span is present.
+		traceID := obsx.TraceIDFromContext(c.Request.Context())
+		if traceID == "" {
+			traceID = GetTraceID(c)
+		}
 
 		// Store trace-id in context for handlers to use
 		c.Set("trace_id", traceID)
