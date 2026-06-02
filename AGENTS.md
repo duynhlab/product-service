@@ -1,195 +1,170 @@
-# product-service
+# AGENTS.md
 
-> AI Agent context for understanding this repository
+Agent-focused contributor guide for `product-service`. Read this before making
+changes. Keep edits surgical and match existing patterns.
 
-## 📋 Overview
+## Contribution workflow
 
-Product catalog microservice. Manages product listings, search, and aggregated product details with Valkey caching and gRPC review aggregation. It is a gRPC **client** (no gRPC server) that calls `review-service` for the product-details endpoint.
+- **Never push to `main`.** Branch, open a PR, let CI gate the merge.
+- Branch names use conventional prefixes: `feat/`, `fix/`, `docs/`, `chore/`,
+  `refactor/`.
+- PRs are **squash-merged** — keep the branch focused on one change.
+- Commit subjects: ≤ 50 chars, imperative mood, capitalised, no trailing period
+  (`Move review summary into logic layer`).
+- Commit body (only when non-trivial): wrap at 72 chars, explain *what* and
+  *why*, one blank line after the subject.
+- **No attribution trailers** (`Signed-off-by`, `Co-authored-by`,
+  `Generated-by`, …). **No** issue references (`Fixes #123`) and **no**
+  `@`-mentions in commit messages — put those in the PR description.
 
-## 🏗️ Architecture Guidelines
+## Code quality
 
-### 3-Layer Architecture
+- Idiomatic Go; follow existing patterns over personal preference.
+- Pass `ctx context.Context` as the first argument; never store it on a struct.
+- Wrap errors with `fmt.Errorf("...: %w", err)`; use `errors.New` when there is
+  no format verb (`perfsprint`). Domain errors live in `internal/.../errors.go`
+  and are compared with `errors.Is`.
+- Always check returned errors (`errcheck`); use `_ =` only with intent.
+- Inject dependencies via constructors (see `NewProductService`,
+  `NewProductHandler`); optional deps (cache, review client) are nilable.
+- Use `net.JoinHostPort` for host:port, `http.NewRequestWithContext` for
+  outbound calls, and extract repeated literals to constants (`goconst`).
+- Tests are table-driven; CI runs them with `-race`.
 
-| Layer | Location | Responsibility |
-|-------|----------|----------------|
-| **Web** | `internal/web/v1/handler.go` | HTTP, validation, **aggregation APIs** |
-| **Logic** | `internal/logic/v1/service.go` | Business rules + cache-aside (❌ NO SQL) |
-| **Core** | `internal/core/` | Domain, repositories, **cache/** |
+## Project overview
 
-### 3-Layer Coding Rules
+Product catalog microservice for the `duynhlab` platform. Module path
+`github.com/duynhlab/product-service` (Go 1.26). It serves product listings,
+single-product reads, and an aggregated product-details endpoint backed by
+Valkey caching. It is a gRPC **client only** (no gRPC server): the details
+endpoint calls `review-service` over gRPC to enrich a product with its reviews.
 
-**CRITICAL**: Strict layer boundaries. Violations will be rejected in code review.
-
-#### Layer Boundaries
-
-| Layer | Location | ALLOWED | FORBIDDEN |
-|-------|----------|---------|-----------|
-| **Web** | `internal/web/v1/` | HTTP handling, JSON binding, DTO mapping, call Logic, aggregation | SQL queries, direct DB access, business rules |
-| **Logic** | `internal/logic/v1/` | Business rules, call repository interfaces, domain errors | SQL queries, `database.GetPool()`, HTTP handling, `*gin.Context` |
-| **Core** | `internal/core/` | Domain models, repository implementations, SQL queries, DB connection | HTTP handling, business orchestration |
-
-#### Dependency Direction
-
-```
-Web -> Logic -> Core (one-way only, never reverse)
-```
-
-- Web imports Logic and Core/domain
-- Logic imports Core/domain and Core/repository interfaces
-- Core imports nothing from Web or Logic
-
-#### DO
-
-- Put HTTP handlers, request validation, error-to-status mapping in `web/`
-- Put business rules, orchestration, transaction logic in `logic/`
-- Put SQL queries in `core/repository/` implementations
-- Use repository interfaces (defined in `core/domain/`) for data access in Logic layer
-- Use dependency injection (constructor parameters) for all service dependencies
-
-#### DO NOT
-
-- Write SQL or call `database.GetPool()` in Logic layer
-- Import `gin` or handle HTTP in Logic layer
-- Put business rules in Web layer (Web only translates and delegates)
-- Call Logic functions directly from another service (cross-service calls go over gRPC; aggregation lives in the Web layer)
-- Skip the Logic layer (Web must not call Core/repository directly)
-
-### Directory Structure
+## Repository layout
 
 ```
 product-service/
-├── cmd/main.go
-├── config/config.go
-├── db/migrations/sql/
+├── cmd/main.go                       # wiring, middleware, graceful shutdown
+├── config/config.go                  # env-driven config + validation
+├── db/migrations/                    # Flyway migrations + Dockerfile + .trivyignore
+│   └── sql/                          # V1..Vn schema/seed
 ├── internal/
-│   ├── core/
-│   │   ├── cache/           # Valkey caching layer
-│   │   ├── database.go
-│   │   └── domain/
-│   ├── logic/v1/service.go      # Cache-Aside product reads (NO SQL)
-│   └── web/v1/
-│       ├── handler.go           # HTTP + aggregation (product details)
-│       └── review_client.go     # gRPC client for review-service + summary
-├── middleware/                  # CORS, tracing, logging, prometheus, profiling
-└── Dockerfile
+│   ├── web/v1/                       # HTTP handlers, DTO mapping, gRPC review client
+│   │   ├── handler.go                # Gin handlers, response assembly
+│   │   └── review_client.go          # gRPC ReviewClient (transport only)
+│   ├── logic/v1/                     # business rules + cache-aside (NO SQL, NO gin)
+│   │   ├── service.go                # ProductService: list/get/create/related
+│   │   ├── details.go                # GetProductDetails aggregation + ReviewFetcher
+│   │   └── errors.go                 # domain-level logic errors
+│   └── core/                         # domain, repositories, DB, cache
+│       ├── domain/                   # models + repository interfaces
+│       ├── repository/               # pgx/v5 PostgreSQL implementations (SQL lives here)
+│       ├── database.go               # pgx connection pool
+│       └── cache/                    # Valkey (go-redis/v9) cache-aside client
+└── middleware/                       # CORS, tracing, logging, prometheus, profiling
 ```
 
-## 🛠️ Development Workflow
-
-### Code Quality
-
-**MANDATORY**: All code changes MUST pass lint before committing.
-
-- Linter: `golangci-lint` v2+ with `.golangci.yml` config (60+ linters enabled)
-- Zero tolerance: PRs with lint errors will NOT be merged
-- CI enforces: `go-check` job runs lint on every PR
-
-#### Commands (run in order)
+## Build, test, lint
 
 ```bash
-go mod tidy              # Clean dependencies
-go build ./...           # Verify compilation
-go test ./...            # Run tests
-golangci-lint run --timeout=10m  # Lint (MUST pass)
+GOTOOLCHAIN=auto go build ./...        # compile
+GOTOOLCHAIN=auto go vet ./...          # vet
+GOTOOLCHAIN=auto go test ./...         # tests (CI adds -race)
+golangci-lint run                      # lint (v2, config in .golangci.yml)
 ```
 
-#### Pre-commit One-liner
+Lint must pass — the `go-check` CI job rejects PRs with lint errors. `GOTOOLCHAIN=auto`
+lets the local toolchain match the `go 1.26.x` directive in `go.mod`.
 
-```bash
-go build ./... && go test ./... && golangci-lint run --timeout=10m
+## Conventions
+
+### Three-layer architecture
+
+Strict, one-way dependency: **Web → Logic → Core**. Violations are rejected in
+review.
+
+- **Web** (`internal/web/v1/`): HTTP handling, JSON binding, DTO mapping, error
+  → status translation, response assembly. No SQL, no business rules.
+- **Logic** (`internal/logic/v1/`): business rules, cache-aside, cross-service
+  aggregation. No SQL, no `database.GetPool()`, no `gin`, no `*gin.Context`.
+- **Core** (`internal/core/`): domain models, repository interfaces +
+  implementations (SQL lives here), DB pool, cache client. Imports nothing from
+  Web or Logic.
+
+```mermaid
+flowchart LR
+    Web[Web v1<br/>handlers] --> Logic[Logic v1<br/>ProductService]
+    Logic --> Core[Core<br/>domain · repository · cache]
+    Core --> DB[(PostgreSQL)]
+    Core --> Cache[(Valkey)]
 ```
 
-### Common Lint Fixes
+### gRPC review aggregation (this service is a CLIENT)
 
-- `perfsprint`: Use `errors.New()` instead of `fmt.Errorf()` when no format verbs
-- `nosprintfhostport`: Use `net.JoinHostPort()` instead of `fmt.Sprintf("%s:%s", host, port)`
-- `errcheck`: Always check error returns (or explicitly `_ = fn()`)
-- `goconst`: Extract repeated string literals to constants
-- `gocognit`: Extract helper functions to reduce complexity
-- `noctx`: Use `http.NewRequestWithContext()` instead of `http.NewRequest()`
+The product-details endpoint (`GET /product/v1/public/products/:id/details`)
+aggregates reviews from `review-service`.
 
-## 🔧 Tech Stack
+- Aggregation lives in the **Logic** layer: `ProductService.GetProductDetails`
+  (`internal/logic/v1/details.go`) composes product + related products + reviews
+  and computes the summary via `ComputeReviewsSummary`.
+- gRPC **transport stays in Web**: `ReviewClient` (`review_client.go`) calls
+  `review.v1.ReviewService/GetProductReviews` and maps the proto to the local
+  `logicv1.Review`. It is injected into Logic through the `ReviewFetcher`
+  interface, so Logic never imports gRPC.
+- Target: `REVIEW_GRPC_ADDR` (default `dns:///review.review.svc.cluster.local:9090`),
+  dialed via `grpcx.Dial` (otelgrpc client stats handler). Per-call deadline 3s.
+- **Soft-fail:** if the review client is nil or the call errors, details return
+  with an empty review list and a zeroed summary — the product still loads.
 
-| Component | Technology |
-|-----------|------------|
-| Language | Go 1.26 |
-| Framework | Gin |
-| Database | PostgreSQL via pgx/v5 |
-| Caching | Valkey (go-redis/v9) |
-| East-west RPC | gRPC client via `github.com/duynhlab/pkg/grpcx` |
-| Observability | `github.com/duynhlab/pkg/obsx` (OTel→Prometheus metrics, trace correlation), OpenTelemetry tracing, Pyroscope profiling |
+### Cache-Aside (Valkey)
 
-## 🏗️ Infrastructure Details
-
-### Database
-
-| Component | Value |
-|-----------|-------|
-| **Cluster** | product-db (CloudNativePG) |
-| **PostgreSQL** | 18 |
-| **HA** | 3 instances (1 primary + 2 replicas) |
-| **Pooler** | PgDog Standalone |
-| **Endpoint** | `pgdog-product.product.svc.cluster.local:6432` |
-
-### Caching
-
-| Component | Value |
-|-----------|-------|
-| **Cache** | Valkey (Redis-compatible) |
-| **Pattern** | Cache-Aside + Stampede Prevention |
-| **Endpoint** | `valkey.cache-system.svc.cluster.local:6379` |
-| **TTL List** | 5m |
-| **TTL Detail** | 10m |
-
-**Cache Keys:**
-- `product:{id}` - single product
-- `product:list:{category}:{search}:{sort}:{order}:{page}:{limit}` - product list
-
-**Stampede Prevention:** Distributed locking (SETNX) ensures only 1 request hits DB on cache miss.
-
-### East-West gRPC (review aggregation)
-
-product-service is a gRPC **client only** (no gRPC server). The product-details handler
-(`internal/web/v1/handler.go` → `GetProductDetails`) aggregates reviews by calling
-`review.v1.ReviewService/GetProductReviews` on review-service over gRPC. This is the official
-east-west transport (replaced the earlier HTTP call). The rating summary (total + average) is
-computed in the Web layer via `ComputeReviewsSummary` in `review_client.go`.
-
-| Component | Value |
-|-----------|-------|
-| **Role** | gRPC client (calls review-service) |
-| **Method** | `review.v1.ReviewService/GetProductReviews` |
-| **Target env** | `REVIEW_GRPC_ADDR` (default `dns:///review.review.svc.cluster.local:9090`) |
-| **Dialer** | `grpcx.Dial` (otelgrpc client stats handler) |
-| **Per-call deadline** | 3s |
-| **Failure mode** | Soft-fail — empty reviews + zeroed summary when review-service is down |
+- Read paths (`ListProducts`, `GetProduct`) use cache-aside in the Logic layer
+  via `core/cache`. `GetProduct` uses `GetProductOrSet` with **stampede
+  prevention** (SETNX lock) so only one request hits the DB on a miss.
+- `CreateProduct` invalidates the list cache after a successful write.
+- Cache is optional: when `CACHE_ENABLED=false` (or init fails) the service runs
+  with `productCache == nil` and goes straight to the repository.
 
 ### Observability (`pkg/obsx`)
 
-| Concern | Implementation |
-|---------|----------------|
-| **gRPC metrics** | `obsx.SetupMetrics()` bridges OTel metrics from the otelgrpc client handler into the default Prometheus registry → gRPC client RED metrics (`rpc_client_*`) appear on the **existing** `/metrics` endpoint (no separate port). |
-| **HTTP metrics** | `PrometheusMiddleware` emits `request_duration_seconds`, `requests_in_flight`, request/response size; scraped by the platform ServiceMonitor on `/metrics`. |
-| **Logging** | `LoggingMiddleware` uses `obsx.TraceIDFromContext` for log↔trace correlation (falls back to header/generated ID when no span). |
-| **Tracing** | OpenTelemetry → OTel Collector (Tempo). |
-| **Middleware order** | CORS → tracing → logging → metrics. |
+- `obsx.SetupMetrics()` (in `main.go`) bridges otelgrpc client metrics into the
+  default Prometheus registry, so **gRPC client RED metrics (`rpc_client_*`)
+  surface on the existing `/metrics` endpoint** — no separate port.
+- `LoggingMiddleware` correlates logs to traces with
+  `obsx.TraceIDFromContext`.
+- HTTP middleware order: **CORS → tracing → logging → metrics**
+  (tracing first for context propagation; logging before Prometheus).
+- Spans are opened with `middleware.StartSpan`, tagged with a `layer` attribute
+  (`web` / `logic`).
 
-### Graceful Shutdown
+### Diagrams
 
-**VictoriaMetrics Pattern:**
-1. `/ready` → 503 when shutting down
-2. Drain delay (5s)
-3. Sequential: HTTP → Database → Tracer
+All diagrams MUST be Mermaid. Never ASCII art.
 
-## 🔌 API Reference
+## Gotchas
 
-Routes are mounted directly at `/{service}/v1/{audience}/…` (Variant A — single URL shape across browser and in-cluster callers). Kong is pure pass-through for `public`; `internal` is reachable only via service DNS.
+- **Review aggregation is soft-fail** — do not turn a review-service outage into
+  a product-details 5xx. Preserve the empty-list + zero-summary fallback.
+- **Cache TTLs** differ: product list `5m` (`CACHE_TTL_PRODUCT_LIST`), single
+  product/detail `10m` (`CACHE_TTL_PRODUCT_DETAIL`). Don't conflate them.
+- **Kyverno image rules:** container images must be
+  `ghcr.io/duynhlab/<service>:<sha|vX.Y.Z>` — **never `:latest`**.
+- **Flyway `.trivyignore`:** `db/migrations/.trivyignore` whitelists upstream
+  CVEs in the bundled Flyway image that cannot be fixed locally. Add new upstream
+  ignores there with a dated comment and re-check on Flyway upgrades; do not
+  silence findings elsewhere.
+- `internal` routes (e.g. `POST /product/v1/internal/products`) are reachable
+  only via in-cluster service DNS — never expose them on the gateway.
 
-| Method | Path | Audience | Description |
-|--------|------|----------|-------------|
+## API reference
+
+Routes mount directly at `/{service}/v1/{audience}/…` (single URL shape for
+browser and in-cluster callers; Kong is pass-through).
+
+| Method | Path | Audience | Notes |
+|--------|------|----------|-------|
 | `GET` | `/product/v1/public/products` | public | List products (cached) |
 | `GET` | `/product/v1/public/products/:id` | public | Get product (cached) |
-| `GET` | `/product/v1/public/products/:id/details` | public | **Aggregated** product + reviews |
-| `POST` | `/product/v1/internal/products` | internal | Create product (invalidates cache) — admin/seed only, via `http://product.product.svc.cluster.local:8080` |
+| `GET` | `/product/v1/public/products/:id/details` | public | Aggregated product + reviews |
+| `POST` | `/product/v1/internal/products` | internal | Create product (admin/seed; invalidates cache) |
 
-Full convention + inventory: [`homelab/docs/api/api-naming-convention.md`](https://github.com/duynhlab/homelab/blob/main/docs/api/api-naming-convention.md).
+Full inventory: [`homelab/docs/api/api-naming-convention.md`](https://github.com/duynhlab/homelab/blob/main/docs/api/api-naming-convention.md).
