@@ -11,18 +11,24 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
+// DefaultRelatedProductsLimit is the default number of related products to return.
+const DefaultRelatedProductsLimit = 4
+
 // ProductService handles product business logic
 type ProductService struct {
-	productRepo  domain.ProductRepository
-	productCache *cache.ProductCache // Optional - nil if caching disabled
+	productRepo   domain.ProductRepository
+	productCache  *cache.ProductCache // Optional - nil if caching disabled
+	reviewFetcher ReviewFetcher       // Optional - nil if review client not configured
 }
 
 // NewProductService creates a new ProductService with repository injection
 // productCache can be nil if caching is disabled
-func NewProductService(repo domain.ProductRepository, productCache *cache.ProductCache) *ProductService {
+// reviewFetcher can be nil if the review client is not configured
+func NewProductService(repo domain.ProductRepository, productCache *cache.ProductCache, reviewFetcher ReviewFetcher) *ProductService {
 	return &ProductService{
-		productRepo:  repo,
-		productCache: productCache,
+		productRepo:   repo,
+		productCache:  productCache,
+		reviewFetcher: reviewFetcher,
 	}
 }
 

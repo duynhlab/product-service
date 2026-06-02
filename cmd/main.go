@@ -128,10 +128,6 @@ func main() {
 		logger.Info("Cache disabled (CACHE_ENABLED=false)")
 	}
 
-	// Initialize services (Logic layer) with dependency injection
-	productService := logicv1.NewProductService(productRepo, productCache)
-	logger.Info("Product service initialized")
-
 	// Initialize review service gRPC client for aggregation in product details endpoint
 	reviewConn, err := grpcx.Dial(cfg.ReviewGRPCAddr)
 	if err != nil {
@@ -142,8 +138,12 @@ func main() {
 	reviewClient := v1.NewReviewClient(reviewConn)
 	logger.Info("Review gRPC client initialized", zap.String("review_grpc_addr", cfg.ReviewGRPCAddr))
 
+	// Initialize services (Logic layer) with dependency injection
+	productService := logicv1.NewProductService(productRepo, productCache, reviewClient)
+	logger.Info("Product service initialized")
+
 	// Initialize Web handler with dependency injection
-	productHandler := v1.NewProductHandler(productService, reviewClient)
+	productHandler := v1.NewProductHandler(productService)
 	logger.Info("Web handlers configured")
 
 	r := gin.Default()

@@ -18,21 +18,14 @@ import (
 // ProductHandler handles HTTP requests for products
 type ProductHandler struct {
 	productService *logicv1.ProductService
-	reviewClient   *ReviewClient
 }
 
 // NewProductHandler creates a new ProductHandler
-func NewProductHandler(service *logicv1.ProductService, reviewClient *ReviewClient) *ProductHandler {
+func NewProductHandler(service *logicv1.ProductService) *ProductHandler {
 	return &ProductHandler{
 		productService: service,
-		reviewClient:   reviewClient,
 	}
 }
-
-const (
-	// DefaultRelatedProductsLimit is the default number of related products to return
-	DefaultRelatedProductsLimit = 4
-)
 
 func (h *ProductHandler) ListProducts(c *gin.Context) {
 	ctx, span := middleware.StartSpan(c.Request.Context(), "http.request", trace.WithAttributes(
@@ -162,11 +155,10 @@ func (h *ProductHandler) GetProductDetails(c *gin.Context) {
 	id := c.Param("id")
 	span.SetAttributes(attribute.String("product.id", id))
 
-	// Get product details
-	product, err := h.productService.GetProduct(ctx, id)
+	details, err := h.productService.GetProductDetails(ctx, id, zapLogger)
 	if err != nil {
 		span.RecordError(err)
-		zapLogger.Error("Failed to get product", zap.Error(err))
+		zapLogger.Error("Failed to get product details", zap.Error(err))
 
 		switch {
 		case errors.Is(err, logicv1.ErrProductNotFound):
@@ -177,50 +169,19 @@ func (h *ProductHandler) GetProductDetails(c *gin.Context) {
 		return
 	}
 
-	// Get related products (aggregation in Web layer)
-	relatedProducts, _ := h.productService.GetRelatedProducts(ctx, id, DefaultRelatedProductsLimit)
-
-	// Get reviews from review service (soft-fail: return empty on error)
-	var reviews []Review
-	var reviewsTotal int
-	var reviewsAverage float64
-	if h.reviewClient != nil {
-		fetchedReviews, err := h.reviewClient.GetProductReviews(ctx, id, zapLogger)
-		if err != nil {
-			// Soft-fail: log and continue with empty reviews
-			span.SetAttributes(attribute.Bool("reviews.fetch_failed", true))
-			zapLogger.Warn("Failed to fetch reviews, continuing with empty list",
-				zap.Error(err),
-				zap.String("product_id", id),
-			)
-			reviews = []Review{}
-		} else {
-			reviews = fetchedReviews
-			reviewsTotal, reviewsAverage = ComputeReviewsSummary(reviews)
-			span.SetAttributes(
-				attribute.Bool("reviews.fetch_failed", false),
-				attribute.Int("reviews.total", reviewsTotal),
-				attribute.Float64("reviews.average_rating", reviewsAverage),
-			)
-		}
-	} else {
-		zapLogger.Warn("Review client not configured, returning empty reviews")
-		reviews = []Review{}
-	}
-
 	// Aggregate response
 	response := gin.H{
-		"product": product,
+		"product": details.Product,
 		"stock": gin.H{
-			"available": product.StockQuantity > 0,
-			"quantity":  product.StockQuantity,
+			"available": details.Product.StockQuantity > 0,
+			"quantity":  details.Product.StockQuantity,
 		},
-		"reviews": reviews,
+		"reviews": details.Reviews,
 		"reviews_summary": gin.H{
-			"total":          reviewsTotal,
-			"average_rating": reviewsAverage,
+			"total":          details.ReviewsTotal,
+			"average_rating": details.ReviewsAverage,
 		},
-		"related_products": relatedProducts,
+		"related_products": details.RelatedProducts,
 	}
 
 	zapLogger.Info("Product details retrieved", zap.String("product_id", id))
