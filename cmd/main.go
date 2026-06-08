@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"net/http"
+	"os"
 	"os/signal"
 	"sync/atomic"
 	"syscall"
@@ -14,8 +15,10 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/duynhlab/pkg/grpcx"
+	"github.com/duynhlab/pkg/migratex"
 	"github.com/duynhlab/pkg/obsx"
 	"github.com/duynhlab/product-service/config"
+	migrations "github.com/duynhlab/product-service/db/migrations"
 	database "github.com/duynhlab/product-service/internal/core"
 	"github.com/duynhlab/product-service/internal/core/cache"
 	"github.com/duynhlab/product-service/internal/core/repository"
@@ -28,9 +31,6 @@ import (
 func main() {
 	// Load configuration from environment variables (with .env file support for local dev)
 	cfg := config.Load()
-	if err := cfg.Validate(); err != nil {
-		panic("Configuration validation failed: " + err.Error())
-	}
 
 	// Initialize structured logger
 	logger, err := middleware.NewLogger()
@@ -38,6 +38,21 @@ func main() {
 		panic("Failed to initialize logger: " + err.Error())
 	}
 	defer func() { _ = logger.Sync() }()
+
+	// `<binary> migrate` runs embedded schema migrations (init container, against
+	// the direct DB host) and exits; no args serves the app.
+	if len(os.Args) > 1 && os.Args[1] == "migrate" {
+		if err := migratex.Run(migrations.FS, "sql", cfg.Database.BuildDSN()); err != nil {
+			logger.Fatal("Schema migration failed", zap.Error(err))
+		}
+		logger.Info("Schema migrations applied")
+		return
+	}
+
+	// Validate runs after the migrate check so migrations need only DB config.
+	if err := cfg.Validate(); err != nil {
+		panic("Configuration validation failed: " + err.Error())
+	}
 
 	logger.Info("Service starting",
 		zap.String("service", cfg.Service.Name),
