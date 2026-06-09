@@ -45,8 +45,8 @@ endpoint calls `review-service` over gRPC to enrich a product with its reviews.
 product-service/
 ├── cmd/main.go                       # wiring, middleware, graceful shutdown
 ├── config/config.go                  # env-driven config + validation
-├── db/migrations/                    # Flyway migrations + Dockerfile + .trivyignore
-│   └── sql/                          # V1..Vn schema/seed
+├── db/migrations/                    # golang-migrate migrations, embedded via embed.go
+│   └── sql/                          # 000001_*.up.sql.. schema/seed
 ├── internal/
 │   ├── web/v1/                       # HTTP handlers, DTO mapping, gRPC review client
 │   │   ├── handler.go                # Gin handlers, response assembly
@@ -148,10 +148,11 @@ All diagrams MUST be Mermaid. Never ASCII art.
   product/detail `10m` (`CACHE_TTL_PRODUCT_DETAIL`). Don't conflate them.
 - **Kyverno image rules:** container images must be
   `ghcr.io/duynhlab/<service>:<sha|vX.Y.Z>` — **never `:latest`**.
-- **Flyway `.trivyignore`:** `db/migrations/.trivyignore` whitelists upstream
-  CVEs in the bundled Flyway image that cannot be fixed locally. Add new upstream
-  ignores there with a dated comment and re-check on Flyway upgrades; do not
-  silence findings elsewhere.
+- **Migrations:** golang-migrate v4.19.1 via `pkg/migratex`, run from the
+  `migrate` subcommand. SQL lives in `db/migrations/sql/000001_*.up.sql`
+  (forward-only `.up.sql`), embedded in the binary through `embed.FS`
+  (`db/migrations/embed.go`). The init container reuses the app image with
+  `args: ["migrate"]` — no separate migration image, Dockerfile, or `.trivyignore`.
 - `internal` routes (e.g. `POST /product/v1/internal/products`) are reachable
   only via in-cluster service DNS — never expose them on the gateway.
 
