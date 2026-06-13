@@ -6,6 +6,7 @@ import (
 
 	"strconv"
 
+	"github.com/duynhlab/pkg/httpx"
 	"github.com/duynhlab/product-service/internal/core/domain"
 	logicv1 "github.com/duynhlab/product-service/internal/logic/v1"
 	"github.com/duynhlab/product-service/middleware"
@@ -61,15 +62,23 @@ func (h *ProductHandler) ListProducts(c *gin.Context) {
 	if err != nil {
 		span.RecordError(err)
 		zapLogger.Error("Failed to list products", zap.Error(err))
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error"})
+		httpx.RespondError(c, http.StatusInternalServerError, httpx.CodeInternal, "Internal server error")
 		return
 	}
 
+	// Normalize page/pageSize to the effective values the repository applied
+	// (limit defaults to 20, page is clamped to >= 1) for the response envelope.
+	page := filters.Page
+	if page < 1 {
+		page = 1
+	}
+	pageSize := filters.Limit
+	if pageSize < 1 {
+		pageSize = 20
+	}
+
 	zapLogger.Info("Products listed", zap.Int("count", len(products)), zap.Int("total", total))
-	c.JSON(http.StatusOK, gin.H{
-		"items": products,
-		"total": total,
-	})
+	c.JSON(http.StatusOK, httpx.NewPaginated(products, page, pageSize, total))
 }
 
 func (h *ProductHandler) GetProduct(c *gin.Context) {
@@ -91,9 +100,9 @@ func (h *ProductHandler) GetProduct(c *gin.Context) {
 
 		switch {
 		case errors.Is(err, logicv1.ErrProductNotFound):
-			c.JSON(http.StatusNotFound, gin.H{"error": "Product not found"})
+			httpx.RespondError(c, http.StatusNotFound, httpx.CodeNotFound, "Product not found")
 		default:
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error"})
+			httpx.RespondError(c, http.StatusInternalServerError, httpx.CodeInternal, "Internal server error")
 		}
 		return
 	}
@@ -117,7 +126,7 @@ func (h *ProductHandler) CreateProduct(c *gin.Context) {
 		span.SetAttributes(attribute.Bool("request.valid", false))
 		span.RecordError(err)
 		zapLogger.Error("Invalid request", zap.Error(err))
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		httpx.RespondError(c, http.StatusBadRequest, httpx.CodeValidation, err.Error())
 		return
 	}
 
@@ -129,11 +138,11 @@ func (h *ProductHandler) CreateProduct(c *gin.Context) {
 
 		switch {
 		case errors.Is(err, logicv1.ErrInvalidPrice):
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid price"})
+			httpx.RespondError(c, http.StatusBadRequest, httpx.CodeValidation, "Invalid price")
 		case errors.Is(err, logicv1.ErrInsufficientStock):
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Insufficient stock"})
+			httpx.RespondError(c, http.StatusBadRequest, httpx.CodeValidation, "Insufficient stock")
 		default:
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error"})
+			httpx.RespondError(c, http.StatusInternalServerError, httpx.CodeInternal, "Internal server error")
 		}
 		return
 	}
@@ -162,9 +171,9 @@ func (h *ProductHandler) GetProductDetails(c *gin.Context) {
 
 		switch {
 		case errors.Is(err, logicv1.ErrProductNotFound):
-			c.JSON(http.StatusNotFound, gin.H{"error": "Product not found"})
+			httpx.RespondError(c, http.StatusNotFound, httpx.CodeNotFound, "Product not found")
 		default:
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error"})
+			httpx.RespondError(c, http.StatusInternalServerError, httpx.CodeInternal, "Internal server error")
 		}
 		return
 	}
