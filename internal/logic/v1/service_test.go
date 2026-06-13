@@ -1,6 +1,7 @@
 package v1
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"sync"
@@ -49,6 +50,15 @@ func (m *memCacheClient) Delete(_ context.Context, key string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	delete(m.data, key)
+	return nil
+}
+
+func (m *memCacheClient) DeleteIfEqual(_ context.Context, key string, value []byte) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if v, ok := m.data[key]; ok && bytes.Equal(v, value) {
+		delete(m.data, key)
+	}
 	return nil
 }
 
