@@ -21,6 +21,7 @@ func jitter(d time.Duration) time.Duration {
 	if d <= 0 {
 		return d
 	}
+	//nolint:gosec // G404: cache TTL jitter is not security-sensitive; weak RNG is fine.
 	return d + time.Duration(rand.Int64N(int64(d)/10+1))
 }
 
