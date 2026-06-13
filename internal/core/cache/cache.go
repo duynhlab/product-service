@@ -26,6 +26,11 @@ type CacheClient interface {
 	// Delete removes a key from cache
 	Delete(ctx context.Context, key string) error
 
+	// DeleteIfEqual removes a key only if its current value equals value.
+	// Used for safe distributed-lock release (compare-and-delete) so a worker
+	// never deletes a lock it no longer owns. A missing key is not an error.
+	DeleteIfEqual(ctx context.Context, key string, value []byte) error
+
 	// DeleteByPattern removes all keys matching the given glob-style pattern.
 	// Uses a non-blocking cursor scan so it is safe on large keyspaces.
 	DeleteByPattern(ctx context.Context, pattern string) error
