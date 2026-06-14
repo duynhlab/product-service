@@ -15,6 +15,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/duynhlab/pkg/grpcx"
+	"github.com/duynhlab/pkg/logger/zapx"
 	"github.com/duynhlab/pkg/migratex"
 	"github.com/duynhlab/pkg/obsx"
 	"github.com/duynhlab/product-service/config"
@@ -33,7 +34,7 @@ func main() {
 	cfg := config.Load()
 
 	// Initialize structured logger
-	logger, err := middleware.NewLogger()
+	logger, err := zapx.New(os.Getenv("LOG_LEVEL"))
 	if err != nil {
 		panic("Failed to initialize logger: " + err.Error())
 	}

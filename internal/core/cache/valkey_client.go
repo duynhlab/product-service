@@ -74,6 +74,21 @@ func (c *ValkeyCacheClient) Delete(ctx context.Context, key string) error {
 	return c.client.Del(ctx, key).Err()
 }
 
+// deleteIfEqualScript deletes key only if its value matches ARGV[1], atomically.
+// This is the standard safe-unlock pattern: a worker releases only the lock it
+// still owns, so a fetch that overran the lock TTL cannot delete a successor's lock.
+var deleteIfEqualScript = redis.NewScript(`
+if redis.call("get", KEYS[1]) == ARGV[1] then
+	return redis.call("del", KEYS[1])
+end
+return 0
+`)
+
+// DeleteIfEqual removes key only if its current value equals value (compare-and-delete).
+func (c *ValkeyCacheClient) DeleteIfEqual(ctx context.Context, key string, value []byte) error {
+	return deleteIfEqualScript.Run(ctx, c.client, []string{key}, value).Err()
+}
+
 // DeleteByPattern removes all keys matching pattern using a SCAN iterator.
 // Matched keys are removed with UNLINK (non-blocking) in batches.
 func (c *ValkeyCacheClient) DeleteByPattern(ctx context.Context, pattern string) error {
