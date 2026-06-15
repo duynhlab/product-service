@@ -48,6 +48,10 @@ func (m *mockProductRepo) FindRelatedProducts(_ context.Context, _ string, _ int
 func (m *mockProductRepo) Count(_ context.Context, _ domain.ProductFilters) (int, error) {
 	return m.total, m.countErr
 }
+func (m *mockProductRepo) ReserveStock(_ context.Context, _ string, _ []domain.ReservationItem) error {
+	return nil
+}
+func (m *mockProductRepo) ReleaseStock(_ context.Context, _ string) error { return nil }
 
 func newHandler(repo domain.ProductRepository) *ProductHandler {
 	return NewProductHandler(logicv1.NewProductService(repo, nil, nil))

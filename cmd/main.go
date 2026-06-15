@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -13,20 +14,48 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap"
+	"google.golang.org/grpc"
 
 	"github.com/duynhlab/pkg/grpcx"
 	"github.com/duynhlab/pkg/logger/zapx"
 	"github.com/duynhlab/pkg/migratex"
 	"github.com/duynhlab/pkg/obsx"
+	productv1 "github.com/duynhlab/pkg/proto/product/v1"
 	"github.com/duynhlab/product-service/config"
 	migrations "github.com/duynhlab/product-service/db/migrations"
 	database "github.com/duynhlab/product-service/internal/core"
 	"github.com/duynhlab/product-service/internal/core/cache"
 	"github.com/duynhlab/product-service/internal/core/repository"
+	grpcv1 "github.com/duynhlab/product-service/internal/grpc/v1"
 	logicv1 "github.com/duynhlab/product-service/internal/logic/v1"
 	v1 "github.com/duynhlab/product-service/internal/web/v1"
 	"github.com/duynhlab/product-service/middleware"
 )
+
+// startGRPC starts the internal gRPC server on cfg.GRPC.Port, serving
+// ProductService (ReserveStock/ReleaseStock for the order-fulfillment saga)
+// alongside the HTTP listener. It uses the shared grpcx bootstrap (OpenTelemetry,
+// health, reflection) and returns nil only if the listener can't bind.
+func startGRPC(cfg *config.Config, logger *zap.Logger, svc *logicv1.ProductService) *grpc.Server {
+	lc := net.ListenConfig{}
+	lis, err := lc.Listen(context.Background(), "tcp", ":"+cfg.GRPC.Port)
+	if err != nil {
+		logger.Error("Failed to listen for gRPC", zap.String("port", cfg.GRPC.Port), zap.Error(err))
+		return nil
+	}
+
+	grpcSrv, _ := grpcx.NewServer()
+	productv1.RegisterProductServiceServer(grpcSrv, grpcv1.NewServer(svc))
+
+	go func() {
+		logger.Info("Starting gRPC server", zap.String("port", cfg.GRPC.Port))
+		if err := grpcSrv.Serve(lis); err != nil {
+			logger.Error("gRPC server error", zap.Error(err))
+		}
+	}()
+
+	return grpcSrv
+}
 
 //nolint:gocognit,funlen // main orchestrates startup/shutdown; single func is intentional
 func main() {
@@ -158,6 +187,9 @@ func main() {
 	productService := logicv1.NewProductService(productRepo, productCache, reviewClient)
 	logger.Info("Product service initialized")
 
+	// Start the internal gRPC server (east-west: order-fulfillment saga).
+	grpcSrv := startGRPC(cfg, logger, productService)
+
 	// Initialize Web handler with dependency injection
 	productHandler := v1.NewProductHandler(productService)
 	logger.Info("Web handlers configured")
@@ -257,6 +289,12 @@ func main() {
 		logger.Error("HTTP server shutdown error", zap.Error(err))
 	} else {
 		logger.Info("HTTP server shutdown complete")
+	}
+
+	// 1b. Stop the gRPC server (drains in-flight RPCs).
+	if grpcSrv != nil {
+		grpcSrv.GracefulStop()
+		logger.Info("gRPC server shutdown complete")
 	}
 
 	// 2. Close cache connection (if enabled)
