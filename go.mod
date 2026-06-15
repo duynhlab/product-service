@@ -3,7 +3,7 @@ module github.com/duynhlab/product-service
 go 1.26.2
 
 require (
-	github.com/duynhlab/pkg v0.6.0
+	github.com/duynhlab/pkg v0.7.0
 	github.com/gin-contrib/cors v1.7.7
 	github.com/gin-gonic/gin v1.12.0
 	github.com/grafana/pyroscope-go v1.3.1

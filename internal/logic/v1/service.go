@@ -32,6 +32,41 @@ func NewProductService(repo domain.ProductRepository, productCache *cache.Produc
 	}
 }
 
+// ReserveStock reserves inventory for an order's items (saga step 1). Idempotent
+// by reservationID; returns domain.ErrInsufficientStock if any item lacks stock.
+// Cached product views may show stale stock until their TTL expires — acceptable
+// since the DB is authoritative for the reservation itself.
+func (s *ProductService) ReserveStock(ctx context.Context, reservationID string, items []domain.ReservationItem) error {
+	ctx, span := middleware.StartSpan(ctx, "product.reserve_stock", trace.WithAttributes(
+		attribute.String("layer", "logic"),
+		attribute.String("reservation_id", reservationID),
+		attribute.Int("item_count", len(items)),
+	))
+	defer span.End()
+
+	if err := s.productRepo.ReserveStock(ctx, reservationID, items); err != nil {
+		span.RecordError(err)
+		return err
+	}
+	return nil
+}
+
+// ReleaseStock returns reserved inventory (saga compensation). Idempotent by
+// reservationID.
+func (s *ProductService) ReleaseStock(ctx context.Context, reservationID string) error {
+	ctx, span := middleware.StartSpan(ctx, "product.release_stock", trace.WithAttributes(
+		attribute.String("layer", "logic"),
+		attribute.String("reservation_id", reservationID),
+	))
+	defer span.End()
+
+	if err := s.productRepo.ReleaseStock(ctx, reservationID); err != nil {
+		span.RecordError(err)
+		return err
+	}
+	return nil
+}
+
 // ListProducts retrieves all products with optional filtering
 // Implements Cache-Aside pattern: check cache first, fallback to repository
 func (s *ProductService) ListProducts(ctx context.Context, filters domain.ProductFilters) ([]domain.Product, int, error) {

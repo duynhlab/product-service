@@ -42,12 +42,19 @@ type Config struct {
 	Metrics         MetricsConfig   // Prometheus metrics
 	Database        DatabaseConfig  // PostgreSQL database configuration
 	Cache           CacheConfig     // Valkey/Redis cache configuration
+	GRPC            GRPCConfig      // Internal gRPC server (east-west: order-fulfillment saga)
 	ShutdownTimeout int             // Graceful shutdown timeout in seconds - from SHUTDOWN_TIMEOUT env (default: 10)
 	// ReadinessDrainDelay: delay after failing readiness before shutting down the HTTP server.
 	// This gives Kubernetes/Service routing time to stop sending new traffic.
 	// From READINESS_DRAIN_DELAY env (default: 5s, max: 30s).
 	ReadinessDrainDelay int
 	ReviewGRPCAddr      string // Review service gRPC target for aggregation - from REVIEW_GRPC_ADDR env
+}
+
+// GRPCConfig defines the internal gRPC server (east-west only). gRPC is the
+// official transport for the order-fulfillment saga's ReserveStock/ReleaseStock.
+type GRPCConfig struct {
+	Port string // GRPC_PORT (default "9090")
 }
 
 // ServiceConfig defines basic service configuration
@@ -182,6 +189,9 @@ func Load() *Config {
 		ShutdownTimeout:     getEnvDurationSeconds("SHUTDOWN_TIMEOUT", 10),
 		ReadinessDrainDelay: getEnvDurationSecondsWithMax("READINESS_DRAIN_DELAY", 5, 30),
 		ReviewGRPCAddr:      getEnv("REVIEW_GRPC_ADDR", "dns:///review.review.svc.cluster.local:9090"),
+		GRPC: GRPCConfig{
+			Port: getEnv("GRPC_PORT", "9090"),
+		},
 	}
 }
 
