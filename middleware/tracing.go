@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/duynhlab/pkg/obsx"
 	"github.com/duynhlab/product-service/config"
 	"github.com/gin-gonic/gin"
 	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
@@ -94,8 +95,13 @@ func InitTracing(cfg *config.Config) (*sdktrace.TracerProvider, error) {
 		sdktrace.WithSampler(sdktrace.ParentBased(sdktrace.TraceIDRatioBased(cfg.Tracing.SampleRate))),
 	)
 
-	// Set global tracer provider
-	otel.SetTracerProvider(tracerProvider)
+	// Set global tracer provider. When profiling is enabled, wrap it so spans
+	// carry pyroscope.profile.id for Grafana traces-to-profiles correlation.
+	if cfg.Profiling.Enabled {
+		otel.SetTracerProvider(obsx.TracerProviderWithProfiles(tracerProvider))
+	} else {
+		otel.SetTracerProvider(tracerProvider)
+	}
 
 	// Set global propagator for trace context propagation (W3C Trace Context)
 	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
