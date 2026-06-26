@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
+	"github.com/duynhlab/product-service/internal/core/cache"
 	"github.com/duynhlab/product-service/internal/core/domain"
 )
 
@@ -67,4 +69,50 @@ func TestReleaseStock(t *testing.T) {
 			t.Fatal("ReleaseStock returned nil, want an error")
 		}
 	})
+}
+
+func TestReserveStockInvalidatesCache(t *testing.T) {
+	mc := newMemCacheClient()
+	_ = mc.Set(context.Background(), "product:1", []byte("stale"), time.Minute)
+	_ = mc.Set(context.Background(), "product:2", []byte("stale"), time.Minute)
+	pc := cache.NewProductCache(mc, time.Minute, time.Minute)
+	svc := NewProductService(&stubProductRepo{}, pc, nil)
+
+	items := []domain.ReservationItem{{ProductID: "1", Quantity: 2}, {ProductID: "2", Quantity: 1}}
+	if err := svc.ReserveStock(context.Background(), "order-42", items); err != nil {
+		t.Fatalf("ReserveStock returned %v, want nil", err)
+	}
+	for _, id := range []string{"1", "2"} {
+		if v, _ := mc.Get(context.Background(), "product:"+id); v != nil {
+			t.Errorf("product:%s still cached after reserve, want invalidated", id)
+		}
+	}
+}
+
+func TestReleaseStockInvalidatesCache(t *testing.T) {
+	mc := newMemCacheClient()
+	_ = mc.Set(context.Background(), "product:7", []byte("stale"), time.Minute)
+	pc := cache.NewProductCache(mc, time.Minute, time.Minute)
+	repo := &stubProductRepo{releasedProductIDs: []string{"7"}}
+	svc := NewProductService(repo, pc, nil)
+
+	if err := svc.ReleaseStock(context.Background(), "order-42"); err != nil {
+		t.Fatalf("ReleaseStock returned %v, want nil", err)
+	}
+	if v, _ := mc.Get(context.Background(), "product:7"); v != nil {
+		t.Error("product:7 still cached after release, want invalidated")
+	}
+}
+
+// A cache invalidation failure must not fail the stock operation (fail-open).
+func TestReserveStockSwallowsCacheError(t *testing.T) {
+	mc := newMemCacheClient()
+	mc.deleteErr = errors.New("cache down")
+	pc := cache.NewProductCache(mc, time.Minute, time.Minute)
+	svc := NewProductService(&stubProductRepo{}, pc, nil)
+
+	items := []domain.ReservationItem{{ProductID: "1", Quantity: 1}}
+	if err := svc.ReserveStock(context.Background(), "order-42", items); err != nil {
+		t.Fatalf("ReserveStock returned %v, want nil despite cache error", err)
+	}
 }

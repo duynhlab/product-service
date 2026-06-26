@@ -34,8 +34,8 @@ func NewProductService(repo domain.ProductRepository, productCache *cache.Produc
 
 // ReserveStock reserves inventory for an order's items (saga step 1). Idempotent
 // by reservationID; returns domain.ErrInsufficientStock if any item lacks stock.
-// Cached product views may show stale stock until their TTL expires — acceptable
-// since the DB is authoritative for the reservation itself.
+// On success it busts each reserved product's detail cache so reads reflect the
+// decremented stock immediately (the DB stays authoritative regardless).
 func (s *ProductService) ReserveStock(ctx context.Context, reservationID string, items []domain.ReservationItem) error {
 	ctx, span := middleware.StartSpan(ctx, "product.reserve_stock", trace.WithAttributes(
 		attribute.String("layer", "logic"),
@@ -48,11 +48,18 @@ func (s *ProductService) ReserveStock(ctx context.Context, reservationID string,
 		span.RecordError(err)
 		return err
 	}
+
+	ids := make([]string, len(items))
+	for i, item := range items {
+		ids[i] = item.ProductID
+	}
+	s.invalidateProducts(ctx, span, ids)
 	return nil
 }
 
 // ReleaseStock returns reserved inventory (saga compensation). Idempotent by
-// reservationID.
+// reservationID. On success it busts the restored products' detail caches so
+// reads reflect the replenished stock immediately.
 func (s *ProductService) ReleaseStock(ctx context.Context, reservationID string) error {
 	ctx, span := middleware.StartSpan(ctx, "product.release_stock", trace.WithAttributes(
 		attribute.String("layer", "logic"),
@@ -60,11 +67,29 @@ func (s *ProductService) ReleaseStock(ctx context.Context, reservationID string)
 	))
 	defer span.End()
 
-	if err := s.productRepo.ReleaseStock(ctx, reservationID); err != nil {
+	released, err := s.productRepo.ReleaseStock(ctx, reservationID)
+	if err != nil {
 		span.RecordError(err)
 		return err
 	}
+	s.invalidateProducts(ctx, span, released)
 	return nil
+}
+
+// invalidateProducts busts the detail cache (product:{id}) for each id. It is
+// best-effort: a cache error is recorded on the span but never fails the caller,
+// and is a no-op when caching is disabled. List caches are intentionally left to
+// expire by TTL to avoid churning product:list:* on every stock change.
+func (s *ProductService) invalidateProducts(ctx context.Context, span trace.Span, ids []string) {
+	if s.productCache == nil {
+		return
+	}
+	for _, id := range ids {
+		if err := s.productCache.InvalidateProduct(ctx, id); err != nil {
+			span.RecordError(err)
+			span.SetAttributes(attribute.Bool("cache.invalidation_error", true))
+		}
+	}
 }
 
 // ListProducts retrieves all products with optional filtering

@@ -51,7 +51,9 @@ func (m *mockProductRepo) Count(_ context.Context, _ domain.ProductFilters) (int
 func (m *mockProductRepo) ReserveStock(_ context.Context, _ string, _ []domain.ReservationItem) error {
 	return nil
 }
-func (m *mockProductRepo) ReleaseStock(_ context.Context, _ string) error { return nil }
+func (m *mockProductRepo) ReleaseStock(_ context.Context, _ string) ([]string, error) {
+	return nil, nil
+}
 
 func newHandler(repo domain.ProductRepository) *ProductHandler {
 	return NewProductHandler(logicv1.NewProductService(repo, nil, nil))

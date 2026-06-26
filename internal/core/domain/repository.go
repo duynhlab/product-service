@@ -28,8 +28,9 @@ type ProductRepository interface {
 	// ReleaseStock restores stock for an active reservation and marks it released
 	// (the compensation for ReserveStock). Idempotent: a no-op when the
 	// reservation is unknown or already released. The recorded reservation is the
-	// source of truth for what to restore.
-	ReleaseStock(ctx context.Context, reservationID string) error
+	// source of truth for what to restore. Returns the ids of the products whose
+	// stock was restored, so callers can invalidate their caches (empty on a no-op).
+	ReleaseStock(ctx context.Context, reservationID string) ([]string, error)
 }
 
 // ReservationItem is a product/quantity pair within a stock reservation.
