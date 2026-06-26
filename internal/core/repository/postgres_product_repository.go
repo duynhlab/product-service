@@ -302,10 +302,10 @@ func (r *PostgresProductRepository) ReserveStock(ctx context.Context, reservatio
 // ReleaseStock restores stock for an active reservation and marks it released
 // (saga compensation for ReserveStock). The ledger is the source of truth, so it
 // is idempotent: a no-op when the reservation is unknown or already released.
-func (r *PostgresProductRepository) ReleaseStock(ctx context.Context, reservationID string) error {
+func (r *PostgresProductRepository) ReleaseStock(ctx context.Context, reservationID string) ([]string, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
@@ -314,7 +314,7 @@ func (r *PostgresProductRepository) ReleaseStock(ctx context.Context, reservatio
 		 WHERE reservation_id = $1 AND status = 'reserved' FOR UPDATE`,
 		reservationID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	type reserved struct {
 		productID int
@@ -325,33 +325,35 @@ func (r *PostgresProductRepository) ReleaseStock(ctx context.Context, reservatio
 		var rr reserved
 		if err := rows.Scan(&rr.productID, &rr.quantity); err != nil {
 			rows.Close()
-			return err
+			return nil, err
 		}
 		active = append(active, rr)
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
-		return err
+		return nil, err
 	}
 
 	if len(active) == 0 {
-		return tx.Commit(ctx) // nothing to release — idempotent no-op
+		return nil, tx.Commit(ctx) // nothing to release — idempotent no-op
 	}
 
+	released := make([]string, 0, len(active))
 	for _, a := range active {
 		if _, err := tx.Exec(ctx,
 			`UPDATE products SET stock_quantity = stock_quantity + $1, updated_at = CURRENT_TIMESTAMP
 			 WHERE id = $2`,
 			a.quantity, a.productID); err != nil {
-			return err
+			return nil, err
 		}
+		released = append(released, strconv.Itoa(a.productID))
 	}
 	if _, err := tx.Exec(ctx,
 		`UPDATE stock_reservations SET status = 'released', updated_at = CURRENT_TIMESTAMP
 		 WHERE reservation_id = $1 AND status = 'reserved'`,
 		reservationID); err != nil {
-		return err
+		return nil, err
 	}
 
-	return tx.Commit(ctx)
+	return released, tx.Commit(ctx)
 }

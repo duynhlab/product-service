@@ -15,8 +15,9 @@ import (
 // memCacheClient is an in-memory cache.CacheClient for exercising the
 // Cache-Aside branches of the logic layer. Always a cache miss on first read.
 type memCacheClient struct {
-	mu   sync.Mutex
-	data map[string][]byte
+	mu        sync.Mutex
+	data      map[string][]byte
+	deleteErr error // when set, Delete returns it (to exercise the error branch)
 }
 
 func newMemCacheClient() *memCacheClient {
@@ -49,6 +50,9 @@ func (m *memCacheClient) SetNX(_ context.Context, key string, value []byte, _ ti
 func (m *memCacheClient) Delete(_ context.Context, key string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.deleteErr != nil {
+		return m.deleteErr
+	}
 	delete(m.data, key)
 	return nil
 }

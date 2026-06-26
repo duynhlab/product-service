@@ -101,11 +101,12 @@ type stubProductRepo struct {
 	createErr   error
 
 	// inventory
-	reserveErr    error
-	releaseErr    error
-	reservedID    string
-	reservedItems []domain.ReservationItem
-	releasedID    string
+	reserveErr         error
+	releaseErr         error
+	reservedID         string
+	reservedItems      []domain.ReservationItem
+	releasedID         string
+	releasedProductIDs []string
 }
 
 func (s *stubProductRepo) FindByID(_ context.Context, _ string) (*domain.Product, error) {
@@ -142,9 +143,9 @@ func (s *stubProductRepo) ReserveStock(_ context.Context, reservationID string, 
 	return s.reserveErr
 }
 
-func (s *stubProductRepo) ReleaseStock(_ context.Context, reservationID string) error {
+func (s *stubProductRepo) ReleaseStock(_ context.Context, reservationID string) ([]string, error) {
 	s.releasedID = reservationID
-	return s.releaseErr
+	return s.releasedProductIDs, s.releaseErr
 }
 
 func TestGetProductDetails(t *testing.T) {
