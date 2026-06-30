@@ -75,6 +75,21 @@ golangci-lint run                      # lint (v2, config in .golangci.yml)
 Lint must pass — the `go-check` CI job rejects PRs with lint errors. `GOTOOLCHAIN=auto`
 lets the local toolchain match the `go 1.26.x` directive in `go.mod`.
 
+### Testing conventions
+
+- **Unit tests** — stdlib `testing` only (no testify/gomock), hand-written mocks for
+  interfaces, table-driven subtests, in `*_test.go` next to the code: Web (`httptest`),
+  Logic (pure — mock the repo), gRPC (call handlers directly), the `core/cache` layer,
+  `middleware`, `config`. Run with `go test ./...` (no Docker).
+- **Integration tests** — `internal/core/repository` is tested against a **real Postgres**
+  via testcontainers, build-tagged `//go:build integration` (the default `go build`/`go test`
+  skip them, so the binary never links testcontainers). Run locally with Docker:
+  `go test -tags=integration ./internal/core/repository/...`. CI wires `integration: true`
+  (go-check) + `integration-coverage: true` (sonar), and merges both coverage profiles into
+  the ≥ 80% new-code gate.
+- **Before pushing**, both the unit run *and* the integration suite must be green locally —
+  green unit ≠ green CI (CI also runs integration with Docker).
+
 - Before pushing or opening a PR, verify Sonar new-code coverage ≥80%: run
   `go test -race -coverprofile=coverage.out ./...` and confirm changed lines are
   covered, including BOTH branches of any new conditional. `**/cmd/**`,
