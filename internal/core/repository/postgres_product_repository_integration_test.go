@@ -184,3 +184,177 @@ func TestPostgresProductRepository_Integration(t *testing.T) {
 		}
 	})
 }
+
+// setStock sets a product's stock_quantity directly (Create doesn't take stock).
+func setStock(t *testing.T, pool *pgxpool.Pool, productID string, qty int) {
+	t.Helper()
+	if _, err := pool.Exec(context.Background(),
+		`UPDATE products SET stock_quantity = $1 WHERE id = $2`, qty, productID); err != nil {
+		t.Fatalf("set stock: %v", err)
+	}
+}
+
+// stockOf reads back a product's stock_quantity.
+func stockOf(t *testing.T, pool *pgxpool.Pool, productID string) int {
+	t.Helper()
+	var q int
+	if err := pool.QueryRow(context.Background(),
+		`SELECT stock_quantity FROM products WHERE id = $1`, productID).Scan(&q); err != nil {
+		t.Fatalf("read stock: %v", err)
+	}
+	return q
+}
+
+// TestPostgresProductRepository_Saga_Integration exercises the
+// order-fulfillment saga methods (ReserveStock / ReleaseStock) and
+// FindRelatedProducts against real SQL — the new-code paths of RFC-0001.
+func TestPostgresProductRepository_Saga_Integration(t *testing.T) {
+	pool := newTestDB(t)
+	repo := NewPostgresProductRepository(pool)
+	ctx := context.Background()
+
+	var category string
+	if err := pool.QueryRow(ctx, "SELECT name FROM categories LIMIT 1").Scan(&category); err != nil {
+		t.Fatalf("expected at least one seeded category: %v", err)
+	}
+	newProduct := func(name string, stock int) *domain.Product {
+		p := &domain.Product{Name: name, Price: 10, Category: category}
+		if err := repo.Create(ctx, p); err != nil {
+			t.Fatalf("Create %s: %v", name, err)
+		}
+		setStock(t, pool, p.ID, stock)
+		return p
+	}
+
+	t.Run("ReserveStock decrements and records the reservation", func(t *testing.T) {
+		p := newProduct("SagaHappy", 10)
+		items := []domain.ReservationItem{{ProductID: p.ID, Quantity: 3}}
+		if err := repo.ReserveStock(ctx, "res-happy", items); err != nil {
+			t.Fatalf("ReserveStock: %v", err)
+		}
+		if got := stockOf(t, pool, p.ID); got != 7 {
+			t.Errorf("stock after reserve = %d, want 7", got)
+		}
+	})
+
+	t.Run("ReserveStock is idempotent by reservationID", func(t *testing.T) {
+		p := newProduct("SagaIdem", 5)
+		items := []domain.ReservationItem{{ProductID: p.ID, Quantity: 2}}
+		if err := repo.ReserveStock(ctx, "res-idem", items); err != nil {
+			t.Fatalf("first ReserveStock: %v", err)
+		}
+		if err := repo.ReserveStock(ctx, "res-idem", items); err != nil {
+			t.Fatalf("retried ReserveStock: %v", err)
+		}
+		if got := stockOf(t, pool, p.ID); got != 3 {
+			t.Errorf("stock after retried reserve = %d, want 3 (single decrement)", got)
+		}
+	})
+
+	t.Run("ReserveStock rolls back everything on insufficient stock", func(t *testing.T) {
+		ok := newProduct("SagaOK", 10)
+		low := newProduct("SagaLow", 1)
+		items := []domain.ReservationItem{
+			{ProductID: ok.ID, Quantity: 2},
+			{ProductID: low.ID, Quantity: 5}, // understocked -> whole tx must roll back
+		}
+		err := repo.ReserveStock(ctx, "res-fail", items)
+		if !errors.Is(err, domain.ErrInsufficientStock) {
+			t.Fatalf("err = %v, want ErrInsufficientStock", err)
+		}
+		if got := stockOf(t, pool, ok.ID); got != 10 {
+			t.Errorf("first item's stock = %d, want 10 (rolled back)", got)
+		}
+		if got := stockOf(t, pool, low.ID); got != 1 {
+			t.Errorf("understocked item's stock = %d, want 1 (untouched)", got)
+		}
+	})
+
+	t.Run("ReleaseStock restores stock and reports released product IDs", func(t *testing.T) {
+		p := newProduct("SagaRelease", 8)
+		items := []domain.ReservationItem{{ProductID: p.ID, Quantity: 6}}
+		if err := repo.ReserveStock(ctx, "res-release", items); err != nil {
+			t.Fatalf("ReserveStock: %v", err)
+		}
+		released, err := repo.ReleaseStock(ctx, "res-release")
+		if err != nil {
+			t.Fatalf("ReleaseStock: %v", err)
+		}
+		if len(released) != 1 || released[0] != p.ID {
+			t.Errorf("released = %v, want [%s]", released, p.ID)
+		}
+		if got := stockOf(t, pool, p.ID); got != 8 {
+			t.Errorf("stock after release = %d, want 8", got)
+		}
+	})
+
+	t.Run("ReleaseStock is an idempotent no-op when already released or unknown", func(t *testing.T) {
+		p := newProduct("SagaReleaseTwice", 4)
+		items := []domain.ReservationItem{{ProductID: p.ID, Quantity: 2}}
+		if err := repo.ReserveStock(ctx, "res-twice", items); err != nil {
+			t.Fatalf("ReserveStock: %v", err)
+		}
+		if _, err := repo.ReleaseStock(ctx, "res-twice"); err != nil {
+			t.Fatalf("first ReleaseStock: %v", err)
+		}
+		released, err := repo.ReleaseStock(ctx, "res-twice")
+		if err != nil {
+			t.Fatalf("second ReleaseStock: %v", err)
+		}
+		if len(released) != 0 {
+			t.Errorf("second release = %v, want empty (no-op)", released)
+		}
+		if got := stockOf(t, pool, p.ID); got != 4 {
+			t.Errorf("stock after double release = %d, want 4 (restored once)", got)
+		}
+		if rel2, err := repo.ReleaseStock(ctx, "res-never-existed"); err != nil || len(rel2) != 0 {
+			t.Errorf("unknown reservation release = (%v, %v), want empty no-op", rel2, err)
+		}
+	})
+
+	t.Run("FindRelatedProducts returns same-category products excluding self", func(t *testing.T) {
+		a := newProduct("RelatedA", 1)
+		b := newProduct("RelatedB", 1)
+		c := newProduct("RelatedC", 1)
+		got, err := repo.FindRelatedProducts(ctx, a.ID, 10)
+		if err != nil {
+			t.Fatalf("FindRelatedProducts: %v", err)
+		}
+		ids := map[string]bool{}
+		for _, p := range got {
+			ids[p.ID] = true
+		}
+		if ids[a.ID] {
+			t.Error("related products must exclude the product itself")
+		}
+		if !ids[b.ID] || !ids[c.ID] {
+			t.Errorf("related = %v, want to include %s and %s", got, b.ID, c.ID)
+		}
+		limited, err := repo.FindRelatedProducts(ctx, a.ID, 1)
+		if err != nil {
+			t.Fatalf("FindRelatedProducts(limit=1): %v", err)
+		}
+		if len(limited) != 1 {
+			t.Errorf("limit=1 returned %d products", len(limited))
+		}
+	})
+
+	t.Run("FindAll and Count honour filters and sorting", func(t *testing.T) {
+		newProduct("FilterMe Gadget", 1)
+		f := domain.ProductFilters{Category: category, Search: "FilterMe", SortBy: "price", Order: "desc", Page: 1, Limit: 5}
+		got, err := repo.FindAll(ctx, f)
+		if err != nil {
+			t.Fatalf("FindAll(filters): %v", err)
+		}
+		if len(got) != 1 || got[0].Name != "FilterMe Gadget" {
+			t.Errorf("filtered FindAll = %+v, want the single FilterMe product", got)
+		}
+		n, err := repo.Count(ctx, f)
+		if err != nil {
+			t.Fatalf("Count(filters): %v", err)
+		}
+		if n != 1 {
+			t.Errorf("filtered Count = %d, want 1", n)
+		}
+	})
+}
