@@ -84,7 +84,7 @@ func GetTracer() trace.Tracer {
 	tracerOnce.Do(func() {
 		serviceName := detectedService
 		if serviceName == "" {
-			serviceName = "unknown-service"
+			serviceName = defaultServiceNameFallback
 		}
 		tracer = otel.Tracer(serviceName)
 	})

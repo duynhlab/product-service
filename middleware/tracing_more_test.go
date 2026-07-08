@@ -37,6 +37,23 @@ func TestShouldTrace(t *testing.T) {
 	}
 }
 
+// TestSetServiceName covers both branches: a non-empty name is recorded for
+// the tracer scope, and an empty name must NOT clobber a previously set one
+// (main() may pass an unset config value).
+func TestSetServiceName(t *testing.T) {
+	orig := detectedService
+	t.Cleanup(func() { detectedService = orig })
+
+	SetServiceName("product")
+	if detectedService != "product" {
+		t.Errorf("detectedService = %q, want product", detectedService)
+	}
+	SetServiceName("")
+	if detectedService != "product" {
+		t.Error("SetServiceName(\"\") must not clobber the recorded name")
+	}
+}
+
 func TestTracingMiddleware(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()

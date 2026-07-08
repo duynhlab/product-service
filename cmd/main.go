@@ -19,6 +19,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"go.opentelemetry.io/otel"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 
@@ -37,7 +38,6 @@ import (
 	logicv1 "github.com/duynhlab/product-service/internal/logic/v1"
 	v1 "github.com/duynhlab/product-service/internal/web/v1"
 	"github.com/duynhlab/product-service/middleware"
-	"go.opentelemetry.io/otel"
 )
 
 // startGRPC starts the internal gRPC server on cfg.GRPC.Port, serving
@@ -185,9 +185,12 @@ func main() {
 
 	// RFC-0014: single OTel wiring point — traces per TRACING_ENABLED, OTLP
 	// metrics/logs behind OTEL_METRICS_ENABLED/OTEL_LOGS_ENABLED (default off).
-	middleware.SetServiceName(cfg.Service.Name)
+	// The config is built once so the tracer scope name and the startup log
+	// reflect the values obsx actually uses.
+	otelCfg := obsx.ConfigFromEnv()
+	middleware.SetServiceName(otelCfg.ServiceName)
 	var tp interface{ Shutdown(context.Context) error }
-	obs, err := obsx.SetupObservability(context.Background(), obsx.ConfigFromEnv())
+	obs, err := obsx.SetupObservability(context.Background(), otelCfg)
 	if err != nil {
 		logger.Warn("Failed to initialize OpenTelemetry", zap.Error(err))
 	} else {
@@ -195,13 +198,16 @@ func main() {
 		if obs.TracerProvider != nil && cfg.Profiling.Enabled {
 			// Preserve traces→profiles correlation: spans carry
 			// pyroscope.profile.id when the wrapped provider is global.
+			// (pkg v0.16.1 absorbs this wrap via Config.ProfilingEnabled —
+			// drop this block on the next pkg bump.)
 			otel.SetTracerProvider(obsx.TracerProviderWithProfiles(obs.TracerProvider))
 		}
 		logger.Info("OpenTelemetry initialized",
 			zap.Bool("traces", obs.TracerProvider != nil),
 			zap.Bool("otlp_metrics", obs.MeterProvider != nil),
 			zap.Bool("otlp_logs", obs.LoggerProvider != nil),
-			zap.Float64("sample_rate", cfg.Tracing.SampleRate),
+			zap.String("endpoint", otelCfg.Endpoint),
+			zap.Float64("sample_rate", otelCfg.SampleRate),
 		)
 	}
 
@@ -369,7 +375,7 @@ func main() {
 
 	logger.Info("Shutting down server...", zap.Duration("timeout", shutdownTimeout))
 
-	// Explicit cleanup sequence: HTTP Server → Cache → Database → Tracer
+	// Explicit cleanup sequence: HTTP Server → Cache → Database → OTel SDK
 	// This ensures predictable shutdown order and easier debugging
 
 	// 1. Shutdown HTTP server (stop accepting new connections, wait for in-flight requests)
@@ -392,12 +398,13 @@ func main() {
 	pool.Close()
 	logger.Info("Database pool closed")
 
-	// 4. Shutdown tracer (flush pending spans)
+	// 4. Shutdown the OTel SDK — flushes pending spans plus any OTLP
+	// metrics/logs providers built behind the RFC-0014 flags.
 	if tp != nil {
 		if err := tp.Shutdown(shutdownCtx); err != nil {
-			logger.Error("Tracer shutdown error", zap.Error(err))
+			logger.Error("OpenTelemetry shutdown error", zap.Error(err))
 		} else {
-			logger.Info("Tracer shutdown complete")
+			logger.Info("OpenTelemetry shutdown complete")
 		}
 	}
 
