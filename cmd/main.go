@@ -18,7 +18,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 
@@ -166,24 +165,9 @@ func main() {
 		zap.String("port", cfg.Service.Port),
 	)
 
-	// Initialize the OTel→Prometheus bridge FIRST (otelgrpc/otelgin metrics on
-	// the scraped /metrics endpoint — the flag-off status quo). When
-	// OTEL_METRICS_ENABLED=true, SetupObservability below installs the OTLP
-	// MeterProvider as the global AFTER this, deliberately superseding the
-	// bridge (RFC-0014 dual-emit: client_golang scrape stays untouched either
-	// way; only the OTel-instrumented metrics switch transport).
-	if cfg.Metrics.Enabled {
-		shutdownMetrics, err := obsx.SetupMetrics()
-		if err != nil {
-			logger.Warn("Failed to initialize metrics", zap.Error(err))
-		} else {
-			logger.Info("Metrics initialized")
-			defer func() { _ = shutdownMetrics(context.Background()) }()
-		}
-	}
-
 	// RFC-0014: single OTel wiring point — traces per TRACING_ENABLED, OTLP
-	// metrics/logs behind OTEL_METRICS_ENABLED/OTEL_LOGS_ENABLED (default off).
+	// metrics (the only pipeline since the P3 cutover; OTEL_METRICS_ENABLED
+	// defaults on, =false is a kill switch), logs behind OTEL_LOGS_ENABLED.
 	// The config is built once so the tracer scope name and the startup log
 	// reflect the values obsx actually uses.
 	otelCfg := obsx.ConfigFromEnv()
@@ -297,11 +281,8 @@ func main() {
 	// Tracing middleware (must be first for context propagation)
 	r.Use(middleware.TracingMiddleware())
 
-	// Logging middleware (must be before Prometheus middleware)
+	// Logging middleware
 	r.Use(middleware.LoggingMiddleware(logger))
-
-	// Prometheus middleware
-	r.Use(middleware.PrometheusMiddleware())
 
 	// Health check
 	r.GET("/health", func(c *gin.Context) {
@@ -317,9 +298,6 @@ func main() {
 		}
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
 	})
-
-	// Metrics endpoint
-	r.GET("/metrics", gin.WrapH(promhttp.Handler()))
 
 	// Product v1 routes — Variant A edge naming (see api-naming-convention.md)
 	r.GET("/product/v1/public/products", productHandler.ListProducts)
