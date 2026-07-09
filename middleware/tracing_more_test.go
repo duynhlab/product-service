@@ -10,9 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-	semconv "go.opentelemetry.io/otel/semconv/v1.24.0"
 )
 
 func TestShouldTrace(t *testing.T) {
@@ -36,6 +34,23 @@ func TestShouldTrace(t *testing.T) {
 				t.Errorf("shouldTrace(%q) = %v, want %v", tt.path, got, tt.want)
 			}
 		})
+	}
+}
+
+// TestSetServiceName covers both branches: a non-empty name is recorded for
+// the tracer scope, and an empty name must NOT clobber a previously set one
+// (main() may pass an unset config value).
+func TestSetServiceName(t *testing.T) {
+	orig := detectedService
+	t.Cleanup(func() { detectedService = orig })
+
+	SetServiceName("product")
+	if detectedService != "product" {
+		t.Errorf("detectedService = %q, want product", detectedService)
+	}
+	SetServiceName("")
+	if detectedService != "product" {
+		t.Error("SetServiceName(\"\") must not clobber the recorded name")
 	}
 }
 
@@ -89,68 +104,5 @@ func TestSpanHelpers(t *testing.T) {
 		AddSpanEvent(ctx, "event")
 		RecordError(ctx, errors.New("boom"))
 		SetSpanStatus(ctx, codes.Error, "nope")
-	})
-}
-
-func TestShutdown(t *testing.T) {
-	orig := tracerProvider
-	t.Cleanup(func() { tracerProvider = orig })
-
-	t.Run("nil provider returns nil", func(t *testing.T) {
-		tracerProvider = nil
-		if err := Shutdown(context.Background()); err != nil {
-			t.Errorf("Shutdown(nil provider) = %v, want nil", err)
-		}
-	})
-
-	t.Run("flushes and shuts down a provider", func(t *testing.T) {
-		tracerProvider = sdktrace.NewTracerProvider()
-		if err := Shutdown(context.Background()); err != nil {
-			t.Errorf("Shutdown() = %v, want nil", err)
-		}
-	})
-}
-
-func TestDetectServiceInfo(t *testing.T) {
-	t.Run("from OTEL_SERVICE_NAME + resource attributes namespace", func(t *testing.T) {
-		t.Setenv("OTEL_SERVICE_NAME", "product")
-		t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "service.namespace=prod,foo=bar")
-		svc, ns := detectServiceInfo()
-		if svc != "product" {
-			t.Errorf("service = %q, want product", svc)
-		}
-		if ns != "prod" {
-			t.Errorf("namespace = %q, want prod", ns)
-		}
-	})
-
-	t.Run("from POD_NAME pattern + POD_NAMESPACE", func(t *testing.T) {
-		t.Setenv("OTEL_SERVICE_NAME", "")
-		t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "")
-		t.Setenv("POD_NAME", "product-75c98b4b9c-kdv2n")
-		t.Setenv("POD_NAMESPACE", "team-a")
-		svc, ns := detectServiceInfo()
-		if svc != "product" {
-			t.Errorf("service = %q, want product (stripped hashes)", svc)
-		}
-		if ns != "team-a" {
-			t.Errorf("namespace = %q, want team-a", ns)
-		}
-	})
-}
-
-func TestGetServiceName(t *testing.T) {
-	t.Run("returns service.name attribute", func(t *testing.T) {
-		res := resource.NewWithAttributes(semconv.SchemaURL, semconv.ServiceNameKey.String("product"))
-		if got := GetServiceName(res); got != "product" {
-			t.Errorf("GetServiceName() = %q, want product", got)
-		}
-	})
-
-	t.Run("falls back to unknown when absent", func(t *testing.T) {
-		res := resource.NewWithAttributes(semconv.SchemaURL, semconv.ServiceVersionKey.String("1.0.0"))
-		if got := GetServiceName(res); got != defaultServiceNameFallback {
-			t.Errorf("GetServiceName() = %q, want %q", got, defaultServiceNameFallback)
-		}
 	})
 }
