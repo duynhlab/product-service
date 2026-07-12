@@ -33,6 +33,7 @@ order saga's inventory steps, called by `order-worker`:
 |-----|---------|
 | `ReserveStock` | Atomic stock decrement + `stock_reservations` ledger, idempotent by `reservation_id` (= order id); insufficient stock → `FailedPrecondition` (non-retryable) |
 | `ReleaseStock` | Saga compensation — the ledger is authoritative (request items ignored) |
+| `GetProducts` | Batch price/availability read for checkout re-validation (RFC-0015) — cache-bypassing (product is the price authority at checkout time), prices in int64 minor units, unknown ids omitted |
 
 **Client — review aggregation:** on `GET /product/v1/public/products/:id/details` it
 calls `review.v1.ReviewService/GetProductReviews` on `review-service` over gRPC (the official

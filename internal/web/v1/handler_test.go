@@ -31,6 +31,10 @@ type mockProductRepo struct {
 func (m *mockProductRepo) FindByID(_ context.Context, _ string) (*domain.Product, error) {
 	return m.product, m.findErr
 }
+func (m *mockProductRepo) FindByIDs(_ context.Context, _ []string) ([]domain.Product, error) {
+	return nil, nil
+}
+
 func (m *mockProductRepo) FindAll(_ context.Context, _ domain.ProductFilters) ([]domain.Product, error) {
 	return m.all, m.findAllErr
 }

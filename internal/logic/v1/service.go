@@ -150,6 +150,27 @@ func (s *ProductService) ListProducts(ctx context.Context, filters domain.Produc
 	return products, total, nil
 }
 
+
+// GetProductsByIDs is the batch price/availability read for checkout
+// re-validation (RFC-0015). It deliberately bypasses the cache: product is
+// the price authority at checkout time, so the answer must be the DB's
+// current row, not a possibly-stale cached copy. Unknown ids are omitted.
+func (s *ProductService) GetProductsByIDs(ctx context.Context, ids []string) ([]domain.Product, error) {
+	ctx, span := middleware.StartSpan(ctx, "product.get_batch", trace.WithAttributes(
+		attribute.String("layer", "logic"),
+		attribute.Int("products.requested", len(ids)),
+	))
+	defer span.End()
+
+	products, err := s.productRepo.FindByIDs(ctx, ids)
+	if err != nil {
+		span.RecordError(err)
+		return nil, err
+	}
+	span.SetAttributes(attribute.Int("products.found", len(products)))
+	return products, nil
+}
+
 // GetProduct retrieves a single product by ID
 // Implements Cache-Aside pattern: check cache first, fallback to repository
 func (s *ProductService) GetProduct(ctx context.Context, id string) (*domain.Product, error) {
