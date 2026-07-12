@@ -113,6 +113,10 @@ func (s *stubProductRepo) FindByID(_ context.Context, _ string) (*domain.Product
 	return s.product, s.findByIDErr
 }
 
+func (s *stubProductRepo) FindByIDs(_ context.Context, _ []string) ([]domain.Product, error) {
+	return s.all, s.findAllErr
+}
+
 func (s *stubProductRepo) FindAll(_ context.Context, _ domain.ProductFilters) ([]domain.Product, error) {
 	return s.all, s.findAllErr
 }

@@ -6,6 +6,9 @@ import "context"
 type ProductRepository interface {
 	// Basic CRUD operations
 	FindByID(ctx context.Context, id string) (*Product, error)
+	// FindByIDs is the batch read for checkout re-validation (RFC-0015).
+	// Unknown or non-numeric ids are omitted from the result, not errors.
+	FindByIDs(ctx context.Context, ids []string) ([]Product, error)
 	FindAll(ctx context.Context, filters ProductFilters) ([]Product, error)
 	Create(ctx context.Context, product *Product) error
 	Update(ctx context.Context, product *Product) error

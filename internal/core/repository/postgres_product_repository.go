@@ -51,6 +51,49 @@ func (r *PostgresProductRepository) FindByID(ctx context.Context, id string) (*d
 	return &product, nil
 }
 
+
+// FindByIDs retrieves a batch of products by id (checkout re-validation,
+// RFC-0015). Non-numeric and unknown ids are omitted from the result — the
+// caller treats a missing id as "product gone". Reads hit the DB directly
+// (never the cache): this is the price/stock authority at checkout time.
+func (r *PostgresProductRepository) FindByIDs(ctx context.Context, ids []string) ([]domain.Product, error) {
+	intIDs := make([]int, 0, len(ids))
+	for _, id := range ids {
+		n, err := strconv.Atoi(id)
+		if err != nil {
+			continue // non-numeric id cannot exist in the catalog
+		}
+		intIDs = append(intIDs, n)
+	}
+	if len(intIDs) == 0 {
+		return nil, nil
+	}
+
+	query := `
+		SELECT p.id, p.name, p.description, p.price, COALESCE(c.name, 'Uncategorized') as category, p.stock_quantity
+		FROM products p
+		LEFT JOIN categories c ON p.category_id = c.id
+		WHERE p.id = ANY($1)
+	`
+	rows, err := r.pool.Query(ctx, query, intIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	products := make([]domain.Product, 0, len(intIDs))
+	for rows.Next() {
+		var p domain.Product
+		var idInt int
+		if err := rows.Scan(&idInt, &p.Name, &p.Description, &p.Price, &p.Category, &p.StockQuantity); err != nil {
+			return nil, err
+		}
+		p.ID = strconv.Itoa(idInt)
+		products = append(products, p)
+	}
+	return products, rows.Err()
+}
+
 // FindAll retrieves all products with optional filtering
 func (r *PostgresProductRepository) FindAll(ctx context.Context, filters domain.ProductFilters) ([]domain.Product, error) {
 	query := `

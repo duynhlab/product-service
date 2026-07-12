@@ -7,6 +7,7 @@ package v1
 import (
 	"context"
 	"errors"
+	"math"
 
 	productv1 "github.com/duynhlab/pkg/proto/product/v1"
 	"github.com/duynhlab/product-service/internal/core/domain"
@@ -19,6 +20,7 @@ import (
 type StockManager interface {
 	ReserveStock(ctx context.Context, reservationID string, items []domain.ReservationItem) error
 	ReleaseStock(ctx context.Context, reservationID string) error
+	GetProductsByIDs(ctx context.Context, ids []string) ([]domain.Product, error)
 }
 
 // Server implements productv1.ProductServiceServer.
@@ -76,4 +78,50 @@ func (s *Server) ReleaseStock(
 		return nil, status.Error(codes.Internal, "failed to release stock")
 	}
 	return &productv1.ReleaseStockResponse{}, nil
+}
+
+// maxGetProductsBatch caps a single GetProducts call. The checkout path is
+// naturally bounded by cart size, but the method is callable by any
+// in-network workload (no Kong in front) — the cap stops an oversized
+// ANY() scan from being a DoS amplifier (security-review finding).
+const maxGetProductsBatch = 200
+
+// GetProducts is the batch price/availability read used by checkout
+// re-validation (RFC-0015). The response contains only the requested ids
+// that exist; prices convert to int64 minor units once, at this boundary.
+func (s *Server) GetProducts(
+	ctx context.Context,
+	req *productv1.GetProductsRequest,
+) (*productv1.GetProductsResponse, error) {
+	if len(req.GetProductIds()) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "product_ids is required")
+	}
+	if len(req.GetProductIds()) > maxGetProductsBatch {
+		return nil, status.Error(codes.InvalidArgument, "too many product_ids in one call")
+	}
+
+	products, err := s.svc.GetProductsByIDs(ctx, req.GetProductIds())
+	if err != nil {
+		return nil, status.Error(codes.Internal, "get products failed")
+	}
+
+	out := make([]*productv1.ProductInfo, 0, len(products))
+	for _, p := range products {
+		qty := p.StockQuantity
+		if qty > math.MaxInt32 {
+			qty = math.MaxInt32
+		}
+		if qty < 0 {
+			qty = 0
+		}
+		out = append(out, &productv1.ProductInfo{
+			ProductId: p.ID,
+			Name:      p.Name,
+			// The catalog stores float dollars; the wire contract is int64
+			// minor units. Round once, at this boundary.
+			PriceMinor:   int64(math.Round(p.Price * 100)),
+			AvailableQty: int32(qty), //nolint:gosec // clamped above
+		})
+	}
+	return &productv1.GetProductsResponse{Products: out}, nil
 }
