@@ -16,6 +16,12 @@ type stubStockManager struct {
 	releaseErr error
 	gotResID   string
 	gotItems   []domain.ReservationItem
+	products   []domain.Product
+	batchErr   error
+}
+
+func (s *stubStockManager) GetProductsByIDs(_ context.Context, _ []string) ([]domain.Product, error) {
+	return s.products, s.batchErr
 }
 
 func (s *stubStockManager) ReserveStock(_ context.Context, id string, items []domain.ReservationItem) error {
@@ -96,4 +102,55 @@ func TestServer_ReleaseStock(t *testing.T) {
 			t.Fatalf("got code %v, want Internal", status.Code(err))
 		}
 	})
+}
+
+func TestGetProducts_MapsToMinorUnits(t *testing.T) {
+	stub := &stubStockManager{products: []domain.Product{
+		{ID: "1", Name: "Wireless Mouse", Price: 29.99, StockQuantity: 42},
+		{ID: "3", Name: "USB-C Hub", Price: 39.99, StockQuantity: 0},
+	}}
+	resp, err := NewServer(stub).GetProducts(context.Background(),
+		&productv1.GetProductsRequest{ProductIds: []string{"1", "3", "999"}})
+	if err != nil {
+		t.Fatalf("GetProducts() error = %v", err)
+	}
+	if len(resp.Products) != 2 {
+		t.Fatalf("products = %d, want 2 (unknown ids omitted)", len(resp.Products))
+	}
+	p := resp.Products[0]
+	if p.ProductId != "1" || p.Name != "Wireless Mouse" || p.PriceMinor != 2999 || p.AvailableQty != 42 {
+		t.Errorf("product[0] = %+v, want id=1 price_minor=2999 qty=42", p)
+	}
+	if resp.Products[1].AvailableQty != 0 {
+		t.Errorf("out-of-stock qty = %d, want 0", resp.Products[1].AvailableQty)
+	}
+}
+
+func TestGetProducts_EmptyIDsIsInvalidArgument(t *testing.T) {
+	_, err := NewServer(&stubStockManager{}).GetProducts(context.Background(), &productv1.GetProductsRequest{})
+	if status.Code(err) != codes.InvalidArgument {
+		t.Errorf("code = %v, want InvalidArgument", status.Code(err))
+	}
+}
+
+func TestGetProducts_LogicErrorIsOpaqueInternal(t *testing.T) {
+	stub := &stubStockManager{batchErr: errors.New("pq: relation missing")}
+	_, err := NewServer(stub).GetProducts(context.Background(),
+		&productv1.GetProductsRequest{ProductIds: []string{"1"}})
+	st := status.Convert(err)
+	if st.Code() != codes.Internal || st.Message() != "get products failed" {
+		t.Errorf("got (%v, %q), want (Internal, \"get products failed\")", st.Code(), st.Message())
+	}
+}
+
+func TestGetProducts_BatchCapIsInvalidArgument(t *testing.T) {
+	ids := make([]string, maxGetProductsBatch+1)
+	for i := range ids {
+		ids[i] = "1"
+	}
+	_, err := NewServer(&stubStockManager{}).GetProducts(context.Background(),
+		&productv1.GetProductsRequest{ProductIds: ids})
+	if status.Code(err) != codes.InvalidArgument {
+		t.Errorf("code = %v, want InvalidArgument (batch cap)", status.Code(err))
+	}
 }

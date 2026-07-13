@@ -22,9 +22,20 @@ All routes follow Variant A naming — single path for browser and in-cluster ca
 
 Operational endpoints: `GET /health`, `GET /ready` (503 while draining), `GET /metrics`.
 
-## East-West gRPC (review aggregation)
+## East-West gRPC
 
-`product-service` is a gRPC **client**. On `GET /product/v1/public/products/:id/details` it
+`product-service` is both a gRPC **server** and **client** on the east-west transport.
+
+**Server — `product.v1.ProductService` (`GRPC_PORT`, default `:9090`):** the
+order saga's inventory steps, called by `order-worker`:
+
+| RPC | Purpose |
+|-----|---------|
+| `ReserveStock` | Atomic stock decrement + `stock_reservations` ledger, idempotent by `reservation_id` (= order id); insufficient stock → `FailedPrecondition` (non-retryable) |
+| `ReleaseStock` | Saga compensation — the ledger is authoritative (request items ignored) |
+| `GetProducts` | Batch price/availability read for checkout re-validation (RFC-0015) — cache-bypassing (product is the price authority at checkout time), prices in int64 minor units, unknown ids omitted |
+
+**Client — review aggregation:** on `GET /product/v1/public/products/:id/details` it
 calls `review.v1.ReviewService/GetProductReviews` on `review-service` over gRPC (the official
 east-west transport, replacing the earlier HTTP call) and computes a rating summary
 (total + average). If review-service is unavailable the call **soft-fails** and the response
@@ -77,6 +88,8 @@ Config is loaded from environment variables (with `.env` support for local dev) 
 | `CACHE_HOST` / `CACHE_PORT` | `valkey.cache-system.svc.cluster.local` / `6379` | Valkey endpoint |
 | `CACHE_TTL_PRODUCT_LIST` | `5m` | Product-list cache TTL |
 | `CACHE_TTL_PRODUCT_DETAIL` | `10m` | Single-product cache TTL |
+| `CACHE_PASSWORD` / `CACHE_DB` | `""` / `0` | Valkey auth (optional) + database index |
+| `GRPC_PORT` | `9090` | gRPC listen port (`ProductService` — saga stock steps) |
 | `TRACING_ENABLED` | `true` | Toggle OTel tracing |
 | `OTEL_COLLECTOR_ENDPOINT` | `otel-collector-opentelemetry-collector.monitoring.svc.cluster.local:4318` | OTLP endpoint |
 | `OTEL_SAMPLE_RATE` | `0.1` | Trace sample rate (0.0–1.0) |

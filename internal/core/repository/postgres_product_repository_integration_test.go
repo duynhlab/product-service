@@ -358,3 +358,56 @@ func TestPostgresProductRepository_Saga_Integration(t *testing.T) {
 		}
 	})
 }
+
+// TestPostgresProductRepository_FindByIDs_Integration covers the checkout
+// batch read (RFC-0015): known ids round-trip, unknown and non-numeric ids
+// are omitted, and an all-invalid batch returns empty without touching SQL.
+func TestPostgresProductRepository_FindByIDs_Integration(t *testing.T) {
+	pool := newTestDB(t)
+	repo := NewPostgresProductRepository(pool)
+	ctx := context.Background()
+
+	var category string
+	if err := pool.QueryRow(ctx, "SELECT name FROM categories LIMIT 1").Scan(&category); err != nil {
+		t.Fatalf("expected at least one seeded category: %v", err)
+	}
+	a := &domain.Product{Name: "Batch A", Price: 12.5, Description: "d", Category: category, StockQuantity: 3}
+	b := &domain.Product{Name: "Batch B", Price: 20, Description: "d", Category: category, StockQuantity: 0}
+	for _, prod := range []*domain.Product{a, b} {
+		if err := repo.Create(ctx, prod); err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+	}
+	// Create does not persist stock (inventory arrives via stock ops); set it
+	// directly so the availability field in the batch read is exercised.
+	if _, err := pool.Exec(ctx, "UPDATE products SET stock_quantity = 3 WHERE id = $1", a.ID); err != nil {
+		t.Fatalf("set stock: %v", err)
+	}
+
+	t.Run("known ids round-trip, unknown and garbage omitted", func(t *testing.T) {
+		got, err := repo.FindByIDs(ctx, []string{a.ID, b.ID, "999999", "not-a-number"})
+		if err != nil {
+			t.Fatalf("FindByIDs: %v", err)
+		}
+		if len(got) != 2 {
+			t.Fatalf("len = %d, want 2 (unknown + garbage omitted): %+v", len(got), got)
+		}
+		byID := map[string]domain.Product{}
+		for _, p := range got {
+			byID[p.ID] = p
+		}
+		if byID[a.ID].Name != "Batch A" || byID[a.ID].StockQuantity != 3 {
+			t.Errorf("a = %+v, want Batch A qty 3", byID[a.ID])
+		}
+		if byID[b.ID].Price != 20 || byID[b.ID].StockQuantity != 0 {
+			t.Errorf("b = %+v, want price 20 qty 0", byID[b.ID])
+		}
+	})
+
+	t.Run("all-invalid batch is empty, no error", func(t *testing.T) {
+		got, err := repo.FindByIDs(ctx, []string{"abc", "-", ""})
+		if err != nil || len(got) != 0 {
+			t.Errorf("FindByIDs(all invalid) = (%v, %v), want empty, nil", got, err)
+		}
+	})
+}
