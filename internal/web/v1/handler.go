@@ -29,12 +29,8 @@ func NewProductHandler(service *logicv1.ProductService) *ProductHandler {
 }
 
 func (h *ProductHandler) ListProducts(c *gin.Context) {
-	ctx, span := middleware.StartSpan(c.Request.Context(), "http.request", trace.WithAttributes(
-		attribute.String("layer", "web"),
-		attribute.String("method", c.Request.Method),
-		attribute.String("path", c.Request.URL.Path),
-	))
-	defer span.End()
+	ctx := c.Request.Context()
+	span := trace.SpanFromContext(ctx)
 
 	zapLogger := middleware.GetLoggerFromGinContext(c)
 
@@ -82,12 +78,8 @@ func (h *ProductHandler) ListProducts(c *gin.Context) {
 }
 
 func (h *ProductHandler) GetProduct(c *gin.Context) {
-	ctx, span := middleware.StartSpan(c.Request.Context(), "http.request", trace.WithAttributes(
-		attribute.String("layer", "web"),
-		attribute.String("method", c.Request.Method),
-		attribute.String("path", c.Request.URL.Path),
-	))
-	defer span.End()
+	ctx := c.Request.Context()
+	span := trace.SpanFromContext(ctx)
 
 	zapLogger := middleware.GetLoggerFromGinContext(c)
 	id := c.Param("id")
@@ -112,12 +104,8 @@ func (h *ProductHandler) GetProduct(c *gin.Context) {
 }
 
 func (h *ProductHandler) CreateProduct(c *gin.Context) {
-	ctx, span := middleware.StartSpan(c.Request.Context(), "http.request", trace.WithAttributes(
-		attribute.String("layer", "web"),
-		attribute.String("method", c.Request.Method),
-		attribute.String("path", c.Request.URL.Path),
-	))
-	defer span.End()
+	ctx := c.Request.Context()
+	span := trace.SpanFromContext(ctx)
 
 	zapLogger := middleware.GetLoggerFromGinContext(c)
 
@@ -153,12 +141,8 @@ func (h *ProductHandler) CreateProduct(c *gin.Context) {
 
 // GetProductDetails retrieves aggregated product details (product + reviews + stock + related)
 func (h *ProductHandler) GetProductDetails(c *gin.Context) {
-	ctx, span := middleware.StartSpan(c.Request.Context(), "http.request", trace.WithAttributes(
-		attribute.String("layer", "web"),
-		attribute.String("method", c.Request.Method),
-		attribute.String("path", c.Request.URL.Path),
-	))
-	defer span.End()
+	ctx := c.Request.Context()
+	span := trace.SpanFromContext(ctx)
 
 	zapLogger := middleware.GetLoggerFromGinContext(c)
 	id := c.Param("id")

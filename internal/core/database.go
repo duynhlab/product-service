@@ -2,63 +2,23 @@ package database
 
 import (
 	"context"
-	"fmt"
-	"math"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/duynhlab/pkg/dbx"
 	"github.com/duynhlab/product-service/config"
 )
 
-// Connect establishes a database connection pool using pgx/v5 from the
-// already-parsed application config. Sharing config.DatabaseConfig (and its
-// BuildDSN) with the migrate subcommand guarantees the app pool and that
-// command connect with an identical DSN — max connections is applied on the
-// pool config here rather than in the DSN string, so it stays a single source
-// of truth.
+// Connect builds the service's Postgres pool via the shared dbx helper. dbx
+// wires otelpgx query tracing (bounded span names, no bind-parameter or
+// connection PII) and pgxpool.* pool-stat metrics, and applies the
+// transaction-mode-pooler-safe settings (simple protocol, statement/description
+// caches off) required by the PgDog/PgBouncer pooler.
 //
-// Why pgx instead of lib/pq?
-// - pgx uses client-side prepared statements, compatible with PgDog/PgBouncer
-// - lib/pq uses server-side prepared statements which cause errors with connection poolers
-// - pgxpool provides built-in connection pooling optimized for PostgreSQL
-//
-// IMPORTANT: We use SimpleProtocol mode and disable statement caching to work correctly
-// with transaction-mode connection poolers (PgCat/PgBouncer). Without this, you may see:
-//
-//	"prepared statement stmtcache_* does not exist"
+// The DSN is cfg.BuildDSN() — the single source shared with the `migrate`
+// subcommand, so the app and migrations connect identically. Max connections is
+// applied via dbx.WithMaxConns rather than the DSN string, keeping the DSN a
+// single source of truth.
 func Connect(ctx context.Context, cfg config.DatabaseConfig) (*pgxpool.Pool, error) {
-	// Parse DSN into pool config
-	poolCfg, err := pgxpool.ParseConfig(cfg.BuildDSN())
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse database config: %w", err)
-	}
-
-	// Apply the configured pool size (kept out of the DSN so the DSN stays
-	// identical to the one the migrate subcommand uses).
-	if cfg.MaxConnections > 0 && cfg.MaxConnections <= math.MaxInt32 {
-		poolCfg.MaxConns = int32(cfg.MaxConnections)
-	}
-
-	// Configure for transaction-mode poolers (PgCat/PgBouncer):
-	// - Use simple protocol to avoid server-side prepared statements
-	// - Disable statement cache (prepared statements are connection-scoped)
-	// - Disable description cache
-	poolCfg.ConnConfig.DefaultQueryExecMode = pgx.QueryExecModeSimpleProtocol
-	poolCfg.ConnConfig.StatementCacheCapacity = 0
-	poolCfg.ConnConfig.DescriptionCacheCapacity = 0
-
-	// Create connection pool with the configured settings
-	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create connection pool: %w", err)
-	}
-
-	// Verify connection is working
-	if err := pool.Ping(ctx); err != nil {
-		pool.Close()
-		return nil, fmt.Errorf("failed to ping database: %w", err)
-	}
-
-	return pool, nil
+	return dbx.NewPool(ctx, cfg.BuildDSN(), dbx.WithMaxConns(cfg.MaxConnections))
 }
