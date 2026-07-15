@@ -46,8 +46,14 @@ func (s *ProductService) ReserveStock(ctx context.Context, reservationID string,
 
 	if err := s.productRepo.ReserveStock(ctx, reservationID, items); err != nil {
 		span.RecordError(err)
+		if errors.Is(err, domain.ErrInsufficientStock) {
+			recordStockReservation(ctx, reservationInsufficient)
+		} else {
+			recordStockReservation(ctx, reservationError)
+		}
 		return err
 	}
+	recordStockReservation(ctx, reservationReserved)
 
 	ids := make([]string, len(items))
 	for i, item := range items {
