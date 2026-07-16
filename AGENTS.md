@@ -60,7 +60,7 @@ product-service/
 │       ├── repository/               # pgx/v5 PostgreSQL implementations (SQL lives here)
 │       ├── database.go               # pgx connection pool
 │       └── cache/                    # Valkey (go-redis/v9) cache-aside client
-└── middleware/                       # CORS, tracing, logging, prometheus, profiling
+└── middleware/                       # tracing, logging, prometheus, profiling
 ```
 
 ## Build, test, lint
@@ -152,8 +152,11 @@ aggregates reviews from `review-service`.
   surface on the existing `/metrics` endpoint** — no separate port.
 - `LoggingMiddleware` correlates logs to traces with
   `obsx.TraceIDFromContext`.
-- HTTP middleware order: **CORS → tracing → logging → metrics**
+- HTTP middleware order: **tracing → logging → metrics**
   (tracing first for context propagation; logging before Prometheus).
+- **No service-level CORS** — CORS is handled by the Kong edge (global `cors`
+  plugin in both stacks). Do not re-add a CORS middleware here; a hardcoded
+  localhost allowlist once broke every browser call on the Kind cluster (403).
 - Spans are opened with `middleware.StartSpan`, tagged with a `layer` attribute
   (`web` / `logic`).
 
