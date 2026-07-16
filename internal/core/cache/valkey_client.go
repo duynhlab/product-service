@@ -6,7 +6,9 @@ import (
 	"errors"
 	"time"
 
+	"github.com/redis/go-redis/extra/redisotel/v9"
 	"github.com/redis/go-redis/v9"
+	"go.opentelemetry.io/otel"
 )
 
 // ValkeyCacheClient implements CacheClient interface using Valkey/Redis
@@ -30,9 +32,24 @@ func NewValkeyCacheClient(addr string, password string, db int) (*ValkeyCacheCli
 		return nil, err
 	}
 
+	instrumentClient(client)
+
 	return &ValkeyCacheClient{
 		client: client,
 	}, nil
+}
+
+// instrumentClient adds redisotel tracing + metrics so every cache command emits
+// a child span (joining the caller's trace) plus go-redis client metrics.
+// Best-effort: a telemetry-instrumentation failure is reported via the OTel
+// error handler and never disables the cache.
+func instrumentClient(rdb redis.UniversalClient) {
+	if err := redisotel.InstrumentTracing(rdb); err != nil {
+		otel.Handle(err)
+	}
+	if err := redisotel.InstrumentMetrics(rdb); err != nil {
+		otel.Handle(err)
+	}
 }
 
 // Get retrieves a value from cache by key
@@ -40,11 +57,14 @@ func (c *ValkeyCacheClient) Get(ctx context.Context, key string) ([]byte, error)
 	val, err := c.client.Get(ctx, key).Bytes()
 	if errors.Is(err, redis.Nil) {
 		// Key doesn't exist - cache miss (not an error)
+		recordCacheGet(ctx, cacheMiss)
 		return nil, nil
 	}
 	if err != nil {
+		recordCacheGet(ctx, cacheError)
 		return nil, err
 	}
+	recordCacheGet(ctx, cacheHit)
 	return val, nil
 }
 
