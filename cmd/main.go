@@ -14,7 +14,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -280,15 +279,8 @@ func main() {
 
 	var isShuttingDown atomic.Bool
 
-	// CORS middleware (must be before other middleware for OPTIONS requests)
-	r.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{"http://localhost:3000", "http://localhost:3001"},
-		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
-		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
-		ExposeHeaders:    []string{"Content-Length"},
-		AllowCredentials: true,
-		MaxAge:           12 * time.Hour,
-	}))
+	// CORS is handled at the Kong edge (global cors plugin in both stacks),
+	// same as the other services — no service-level CORS middleware.
 
 	// Tracing middleware (must be first for context propagation)
 	r.Use(middleware.TracingMiddleware())

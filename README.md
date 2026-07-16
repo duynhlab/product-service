@@ -60,7 +60,10 @@ Built on `github.com/duynhlab/pkg/obsx`:
 - **Tracing**: OpenTelemetry traces exported to the OTel Collector (Tempo).
 - **Profiling**: Pyroscope continuous profiling.
 
-Middleware chain (order matters): **CORS → tracing → logging → metrics**.
+Middleware chain (order matters): **tracing → logging** (metrics come from
+otelgin/otelgrpc and explicit instruments, not a third middleware).
+CORS is terminated at the Kong edge (global `cors` plugin in both local-stack
+and the cluster) — the service carries no CORS middleware.
 
 ## Tech Stack
 
