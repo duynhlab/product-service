@@ -125,3 +125,49 @@ func (s *Server) GetProducts(
 	}
 	return &productv1.GetProductsResponse{Products: out}, nil
 }
+
+// defaultCurrency is the platform money currency (RFC-0010: prices are USD
+// minor units). The catalog has no per-product currency column — this is a
+// single-currency platform — so every CurrentPrice reports USD.
+const defaultCurrency = "USD"
+
+// BatchGetCurrentPrices is the price-only successor to GetProducts (RFC-0021:
+// availability moves to inventory.v1). It reuses the same cache-bypassing,
+// DB-truth batch read as GetProducts — product is the price authority at
+// checkout — and returns only prices, no stock fields. Unknown SKUs are
+// omitted, matching GetProducts; sku_id == product id in this phase.
+func (s *Server) BatchGetCurrentPrices(
+	ctx context.Context,
+	req *productv1.BatchGetCurrentPricesRequest,
+) (*productv1.BatchGetCurrentPricesResponse, error) {
+	if len(req.GetSkuIds()) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "sku_ids is required")
+	}
+	// Same cap as GetProducts: the method is callable by any in-network
+	// workload, so bound the ANY() scan to stop an oversized DoS amplifier.
+	if len(req.GetSkuIds()) > maxGetProductsBatch {
+		return nil, status.Error(codes.InvalidArgument, "too many sku_ids in one call")
+	}
+
+	products, err := s.svc.GetProductsByIDs(ctx, req.GetSkuIds())
+	if err != nil {
+		return nil, status.Error(codes.Internal, "get current prices failed")
+	}
+
+	out := make([]*productv1.CurrentPrice, 0, len(products))
+	for _, p := range products {
+		out = append(out, &productv1.CurrentPrice{
+			SkuId: p.ID,
+			Name:  p.Name,
+			// Float dollars -> int64 minor units, rounded once at this boundary
+			// (same conversion as GetProducts).
+			PriceMinor: int64(math.Round(p.Price * 100)),
+			Currency:   defaultCurrency,
+			// GAP: the catalog has no lifecycle/publish column, so any row the
+			// batch read returns is by definition still sold. Every existing
+			// SKU is sellable=true until an explicit product lifecycle exists.
+			Sellable: true,
+		})
+	}
+	return &productv1.BatchGetCurrentPricesResponse{Prices: out}, nil
+}
