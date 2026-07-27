@@ -249,3 +249,72 @@ func TestGetProductDetails(t *testing.T) {
 		})
 	}
 }
+
+// stubAvailabilityFetcher is a test double for the AvailabilityFetcher interface.
+type stubAvailabilityFetcher struct {
+	avail Availability
+	err   error
+	calls int
+}
+
+func (s *stubAvailabilityFetcher) GetAvailability(_ context.Context, _ string, _ *zap.Logger) (Availability, error) {
+	s.calls++
+	return s.avail, s.err
+}
+
+// TestGetProductDetails_AvailabilityEnrichment covers RFC-0021 P2-6: the
+// inventory enrichment is nil-disabled by default, sets availability on success,
+// and soft-fails to {status: unknown} on error without failing the page.
+func TestGetProductDetails_AvailabilityEnrichment(t *testing.T) {
+	product := &domain.Product{ID: "p1", Name: "Widget"}
+	base := func() *stubProductRepo { return &stubProductRepo{product: product} }
+
+	t.Run("disabled (nil fetcher) omits availability", func(t *testing.T) {
+		svc := NewProductService(base(), nil, nil)
+		d, err := svc.GetProductDetails(context.Background(), "p1", zap.NewNop())
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if d.Availability != nil {
+			t.Errorf("want nil availability when disabled, got %+v", d.Availability)
+		}
+	})
+
+	t.Run("success sets inventory availability", func(t *testing.T) {
+		f := &stubAvailabilityFetcher{avail: Availability{Status: "in_stock", AvailableToPromise: 7}}
+		svc := NewProductService(base(), nil, nil).WithAvailability(f)
+		d, err := svc.GetProductDetails(context.Background(), "p1", zap.NewNop())
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if f.calls != 1 || d.Availability == nil || d.Availability.Status != "in_stock" || d.Availability.AvailableToPromise != 7 {
+			t.Errorf("want in_stock/7 (calls=1), got calls=%d %+v", f.calls, d.Availability)
+		}
+	})
+
+	t.Run("fetch error soft-fails to unknown, page still returns", func(t *testing.T) {
+		f := &stubAvailabilityFetcher{err: errors.New("inventory down")}
+		svc := NewProductService(base(), nil, nil).WithAvailability(f)
+		d, err := svc.GetProductDetails(context.Background(), "p1", zap.NewNop())
+		if err != nil {
+			t.Fatalf("soft-fail must not error the page: %v", err)
+		}
+		if d.Availability == nil || d.Availability.Status != AvailabilityUnknown {
+			t.Errorf("want {status: unknown} on fetch error, got %+v", d.Availability)
+		}
+	})
+
+	t.Run("runs even when the review fetch errors", func(t *testing.T) {
+		// Locks contract-2's error path: a review soft-fail must not skip
+		// enrichment (the review error-return is after enrichAvailability).
+		f := &stubAvailabilityFetcher{avail: Availability{Status: "in_stock", AvailableToPromise: 3}}
+		svc := NewProductService(base(), nil, &stubReviewFetcher{err: errors.New("reviews down")}).WithAvailability(f)
+		d, err := svc.GetProductDetails(context.Background(), "p1", zap.NewNop())
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if f.calls != 1 || d.Availability == nil || d.Availability.Status != "in_stock" {
+			t.Errorf("availability must be set despite a review error: calls=%d %+v", f.calls, d.Availability)
+		}
+	})
+}

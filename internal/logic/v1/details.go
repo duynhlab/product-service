@@ -27,6 +27,29 @@ type ReviewFetcher interface {
 	GetProductReviews(ctx context.Context, productID string, logger *zap.Logger) ([]Review, error)
 }
 
+// AvailabilityUnknown is the soft-fail status when inventory can't be reached or
+// doesn't track a SKU (RFC-0021 P2-6): the detail page still renders, just
+// without a definite availability.
+const AvailabilityUnknown = "unknown"
+
+// Availability is inventory-service's view of a SKU (from
+// inventory.v1/BatchGetAvailability), surfaced on the detail page as an
+// enrichment. Status ∈ in_stock|low_stock|out_of_stock|unknown.
+type Availability struct {
+	Status string `json:"status"`
+	// omitempty so an unknown/soft-failed result emits just {"status":"unknown"}
+	// rather than an ambiguous available_to_promise:0 (vs a genuine 0 stock).
+	AvailableToPromise int64 `json:"available_to_promise,omitempty"`
+}
+
+// AvailabilityFetcher fetches inventory availability for a SKU (RFC-0021 P2-6).
+// Implemented by the web-layer InventoryClient (gRPC transport stays in web).
+// Wired only when PRODUCT_AVAILABILITY_SOURCE=inventory; otherwise nil and the
+// detail page keeps showing Product's own stock only.
+type AvailabilityFetcher interface {
+	GetAvailability(ctx context.Context, skuID string, logger *zap.Logger) (Availability, error)
+}
+
 // ProductDetails is the aggregated view returned by GetProductDetails.
 type ProductDetails struct {
 	Product         *domain.Product
@@ -34,6 +57,9 @@ type ProductDetails struct {
 	Reviews         []Review
 	ReviewsTotal    int
 	ReviewsAverage  float64
+	// Availability is nil unless inventory enrichment is enabled (P2-6); on a
+	// fetch failure it is set to {Status: unknown} (soft-fail, never blocks).
+	Availability *Availability
 }
 
 // GetProductDetails aggregates a product with its related products and review
@@ -60,6 +86,10 @@ func (s *ProductService) GetProductDetails(ctx context.Context, id string, logge
 		Reviews:         []Review{},
 	}
 
+	// Availability enrichment is independent of reviews (RFC-0021 P2-6): run it
+	// here so the review soft-fail early-returns below still carry it.
+	s.enrichAvailability(ctx, id, details, logger)
+
 	if s.reviewFetcher == nil {
 		logger.Warn("Review client not configured, returning empty reviews")
 		return details, nil
@@ -85,6 +115,34 @@ func (s *ProductService) GetProductDetails(ctx context.Context, id string, logge
 	)
 
 	return details, nil
+}
+
+// enrichAvailability adds inventory-sourced availability to the detail view
+// (RFC-0021 P2-6). The product id IS the inventory sku_id (RFC-0021 key
+// decision: sku_id = product_id initially), so the same id keys both. Soft-fail:
+// a nil fetcher (enrichment disabled) leaves it off entirely; a fetch error
+// reports {Status: unknown} rather than failing the page (Product's own stock is
+// still on the response). NOTE: until the phase-3 write cutover inventory is not
+// live-written, so an enabled enrichment reflects the backfill snapshot — it is
+// advisory, gated behind PRODUCT_AVAILABILITY_SOURCE.
+func (s *ProductService) enrichAvailability(ctx context.Context, id string, details *ProductDetails, logger *zap.Logger) {
+	if s.availabilityFetcher == nil {
+		return
+	}
+	span := trace.SpanFromContext(ctx)
+	avail, err := s.availabilityFetcher.GetAvailability(ctx, id, logger)
+	if err != nil {
+		span.SetAttributes(attribute.Bool("availability.fetch_failed", true))
+		logger.Warn("Failed to fetch inventory availability, reporting unknown",
+			zap.Error(err), zap.String("product_id", id))
+		details.Availability = &Availability{Status: AvailabilityUnknown}
+		return
+	}
+	details.Availability = &avail
+	span.SetAttributes(
+		attribute.Bool("availability.fetch_failed", false),
+		attribute.String("availability.status", avail.Status),
+	)
 }
 
 // ComputeReviewsSummary computes total and average rating from reviews.

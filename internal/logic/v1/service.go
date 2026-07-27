@@ -16,9 +16,10 @@ const DefaultRelatedProductsLimit = 4
 
 // ProductService handles product business logic
 type ProductService struct {
-	productRepo   domain.ProductRepository
-	productCache  *cache.ProductCache // Optional - nil if caching disabled
-	reviewFetcher ReviewFetcher       // Optional - nil if review client not configured
+	productRepo         domain.ProductRepository
+	productCache        *cache.ProductCache // Optional - nil if caching disabled
+	reviewFetcher       ReviewFetcher       // Optional - nil if review client not configured
+	availabilityFetcher AvailabilityFetcher // Optional - nil unless inventory enrichment enabled (P2-6)
 }
 
 // NewProductService creates a new ProductService with repository injection
@@ -30,6 +31,14 @@ func NewProductService(repo domain.ProductRepository, productCache *cache.Produc
 		productCache:  productCache,
 		reviewFetcher: reviewFetcher,
 	}
+}
+
+// WithAvailability wires the inventory availability enrichment for
+// GetProductDetails (RFC-0021 P2-6). A nil fetcher (the default) keeps the
+// detail page on Product's own stock — the enrichment is soft-fail and additive.
+func (s *ProductService) WithAvailability(f AvailabilityFetcher) *ProductService {
+	s.availabilityFetcher = f
+	return s
 }
 
 // ReserveStock reserves inventory for an order's items (saga step 1). Idempotent
