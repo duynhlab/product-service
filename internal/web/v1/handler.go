@@ -176,6 +176,11 @@ func (h *ProductHandler) GetProductDetails(c *gin.Context) {
 		},
 		"related_products": details.RelatedProducts,
 	}
+	// RFC-0021 P2-6: inventory-sourced availability, present only when the
+	// enrichment is enabled (soft-fails to {status: unknown}).
+	if details.Availability != nil {
+		response["availability"] = details.Availability
+	}
 
 	zapLogger.Info("Product details retrieved", zap.String("product_id", id))
 	c.JSON(http.StatusOK, response)

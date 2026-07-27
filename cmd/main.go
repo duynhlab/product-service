@@ -266,6 +266,23 @@ func main() {
 
 	// Initialize services (Logic layer) with dependency injection
 	productService := logicv1.NewProductService(productRepo, productCache, reviewClient)
+
+	// RFC-0021 P2-6: inventory availability enrichment for GetProductDetails,
+	// only when explicitly selected. Soft-fail like the review enrichment — a
+	// dial failure disables it and logs, never blocks startup (the detail page
+	// keeps showing Product's own stock).
+	if cfg.AvailabilitySource == "inventory" {
+		invConn, ierr := grpcx.Dial(cfg.InventoryGRPCAddr)
+		if ierr != nil {
+			logger.Error("inventory availability enrichment disabled: dial failed",
+				zap.String("addr", cfg.InventoryGRPCAddr), zap.Error(ierr))
+		} else {
+			defer func() { _ = invConn.Close() }()
+			productService = productService.WithAvailability(v1.NewInventoryClient(invConn))
+			logger.Info("Inventory availability enrichment enabled",
+				zap.String("inventory_grpc_addr", cfg.InventoryGRPCAddr))
+		}
+	}
 	logger.Info("Product service initialized")
 
 	// Start the internal gRPC server (east-west: order-fulfillment saga).
