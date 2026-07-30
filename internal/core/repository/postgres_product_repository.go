@@ -96,8 +96,10 @@ func (r *PostgresProductRepository) FindByIDs(ctx context.Context, ids []string)
 
 // FindAll retrieves all products with optional filtering
 func (r *PostgresProductRepository) FindAll(ctx context.Context, filters domain.ProductFilters) ([]domain.Product, error) {
+	// stock_quantity rides along like it does in FindByID — the list and the
+	// detail page must not disagree about whether a product is in stock.
 	query := `
-		SELECT p.id, p.name, p.description, p.price, COALESCE(c.name, 'Uncategorized') as category
+		SELECT p.id, p.name, p.description, p.price, COALESCE(c.name, 'Uncategorized') as category, p.stock_quantity
 		FROM products p
 		LEFT JOIN categories c ON p.category_id = c.id
 		WHERE 1=1
@@ -157,7 +159,7 @@ func (r *PostgresProductRepository) FindAll(ctx context.Context, filters domain.
 	for rows.Next() {
 		var product domain.Product
 		var idInt int
-		err := rows.Scan(&idInt, &product.Name, &product.Description, &product.Price, &product.Category)
+		err := rows.Scan(&idInt, &product.Name, &product.Description, &product.Price, &product.Category, &product.StockQuantity)
 		if err != nil {
 			return nil, err
 		}
