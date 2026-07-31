@@ -42,6 +42,8 @@ func (s *Server) ReserveStock(
 	ctx context.Context,
 	req *productv1.ReserveStockRequest,
 ) (*productv1.ReserveStockResponse, error) {
+	// Before validation: the phase-4 gate counts touches, not successes.
+	recordStockSurfaceCall(ctx, rpcReserveStock)
 	if req.GetReservationId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "reservation_id is required")
 	}
@@ -71,6 +73,7 @@ func (s *Server) ReleaseStock(
 	ctx context.Context,
 	req *productv1.ReleaseStockRequest,
 ) (*productv1.ReleaseStockResponse, error) {
+	recordStockSurfaceCall(ctx, rpcReleaseStock)
 	if req.GetReservationId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "reservation_id is required")
 	}
