@@ -26,15 +26,16 @@ Operational endpoints: `GET /health`, `GET /ready` (503 while draining), `GET /m
 
 `product-service` is both a gRPC **server** and **client** on the east-west transport.
 
-**Server — `product.v1.ProductService` (`GRPC_PORT`, default `:9090`):** a READ
-surface. The stock write RPCs (`ReserveStock` / `ReleaseStock`) were **removed in
-RFC-0021 phase 4** — inventory-service is the stock authority, and the order saga's
-product branch was deleted in order 1.13.0:
+**Server — `product.v1.ProductService` (`GRPC_PORT`, default `:9090`):** one RPC, and
+it answers **price only**. RFC-0021 phase 4 emptied this contract of stock in order:
+the write RPCs (`ReserveStock`/`ReleaseStock`), then `GetProducts` — whose
+`available_qty` was the last place product answered an availability question, read
+from a column frozen at the write cutover. Availability is
+`inventory.v1/CheckAvailability`:
 
 | RPC | Purpose |
 |-----|---------|
-| `BatchGetCurrentPrices` | Price-only batch read (RFC-0021), DB-truth like `GetProducts`; unknown SKUs omitted |
-| `GetProducts` | Batch price/availability read for checkout re-validation (RFC-0015) — cache-bypassing (product is the price authority at checkout time), prices in int64 minor units, unknown ids omitted |
+| `BatchGetCurrentPrices` | Price-only batch read, DB-truth (cache-bypassing) — product is the price authority at checkout time; prices in int64 minor units, unknown SKUs omitted |
 
 **Client — review aggregation:** on `GET /product/v1/public/products/:id/details` it
 calls `review.v1.ReviewService/GetProductReviews` on `review-service` over gRPC (the official

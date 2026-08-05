@@ -267,20 +267,13 @@ func TestPostgresProductRepository_FindByIDs_Integration(t *testing.T) {
 	if err := pool.QueryRow(ctx, "SELECT name FROM categories LIMIT 1").Scan(&category); err != nil {
 		t.Fatalf("expected at least one seeded category: %v", err)
 	}
-	a := &domain.Product{Name: "Batch A", Price: 12.5, Description: "d", Category: category, StockQuantity: 3}
-	b := &domain.Product{Name: "Batch B", Price: 20, Description: "d", Category: category, StockQuantity: 0}
+	a := &domain.Product{Name: "Batch A", Price: 12.5, Description: "d", Category: category}
+	b := &domain.Product{Name: "Batch B", Price: 20, Description: "d", Category: category}
 	for _, prod := range []*domain.Product{a, b} {
 		if err := repo.Create(ctx, prod); err != nil {
 			t.Fatalf("Create: %v", err)
 		}
 	}
-	// Create does not persist stock, and since RFC-0021 phase 4 NOTHING in this
-	// service writes stock_quantity — the column is frozen pending its own removal; set it
-	// directly so the availability field in the batch read is exercised.
-	if _, err := pool.Exec(ctx, "UPDATE products SET stock_quantity = 3 WHERE id = $1", a.ID); err != nil {
-		t.Fatalf("set stock: %v", err)
-	}
-
 	t.Run("known ids round-trip, unknown and garbage omitted", func(t *testing.T) {
 		got, err := repo.FindByIDs(ctx, []string{a.ID, b.ID, "999999", "not-a-number"})
 		if err != nil {
@@ -293,10 +286,10 @@ func TestPostgresProductRepository_FindByIDs_Integration(t *testing.T) {
 		for _, p := range got {
 			byID[p.ID] = p
 		}
-		if byID[a.ID].Name != "Batch A" || byID[a.ID].StockQuantity != 3 {
+		if byID[a.ID].Name != "Batch A" {
 			t.Errorf("a = %+v, want Batch A qty 3", byID[a.ID])
 		}
-		if byID[b.ID].Price != 20 || byID[b.ID].StockQuantity != 0 {
+		if byID[b.ID].Price != 20 {
 			t.Errorf("b = %+v, want price 20 qty 0", byID[b.ID])
 		}
 	})
@@ -307,53 +300,4 @@ func TestPostgresProductRepository_FindByIDs_Integration(t *testing.T) {
 			t.Errorf("FindByIDs(all invalid) = (%v, %v), want empty, nil", got, err)
 		}
 	})
-}
-
-// The catalog LIST reported every product as out of stock: FindAll's SELECT
-// omitted stock_quantity while FindByID includes it, so the same product showed
-// its real stock on the detail page and 0 in every list. Nothing downstream can
-// repair a field that was never read — checkout's availability fallback and the
-// SPA both consume the list.
-func TestPostgresProductRepository_FindAllCarriesStock_Integration(t *testing.T) {
-	pool := newTestDB(t)
-	repo := NewPostgresProductRepository(pool)
-	ctx := context.Background()
-
-	var category string
-	if err := pool.QueryRow(ctx, "SELECT name FROM categories LIMIT 1").Scan(&category); err != nil {
-		t.Fatalf("expected at least one seeded category: %v", err)
-	}
-
-	p := &domain.Product{Name: "Stocked Widget", Price: 9.99, Description: "d", Category: category}
-	if err := repo.Create(ctx, p); err != nil {
-		t.Fatalf("Create: %v", err)
-	}
-	// Stock is set directly rather than through Create: Create's INSERT omits the
-	// column (a separate, pre-existing gap — stock is managed by the saga's
-	// reserve/release SQL, not by product authoring), and going through it here
-	// would let this test pass on 0 == 0 without reading anything.
-	if _, err := pool.Exec(ctx, "UPDATE products SET stock_quantity = 42 WHERE id = $1::int", p.ID); err != nil {
-		t.Fatalf("seed stock: %v", err)
-	}
-
-	// The detail read is the reference: whatever it reports, the list must agree.
-	detail, err := repo.FindByID(ctx, p.ID)
-	if err != nil {
-		t.Fatalf("FindByID: %v", err)
-	}
-	if detail.StockQuantity != 42 {
-		t.Fatalf("detail stock = %d, want 42 — the reference read is broken, this test cannot judge the list", detail.StockQuantity)
-	}
-
-	list, err := repo.FindAll(ctx, domain.ProductFilters{Search: "Stocked Widget"})
-	if err != nil {
-		t.Fatalf("FindAll: %v", err)
-	}
-	if len(list) != 1 {
-		t.Fatalf("FindAll returned %d products, want 1", len(list))
-	}
-	if list[0].StockQuantity != detail.StockQuantity {
-		t.Errorf("list stock = %d, detail stock = %d — the same product must not be in stock on one page and sold out on another",
-			list[0].StockQuantity, detail.StockQuantity)
-	}
 }

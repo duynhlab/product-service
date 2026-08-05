@@ -164,11 +164,10 @@ func (h *ProductHandler) GetProductDetails(c *gin.Context) {
 
 	// Aggregate response.
 	//
-	// No `stock` block: it reported products.stock_quantity, frozen since the
-	// RFC-0021 W7 write cutover, so it was a number that could not change. The
-	// `availability` block below answers from inventory-service instead, and it is
-	// deliberately the ONLY stock answer here — two answers, one of them stale, is
-	// how a caller ends up trusting the wrong one.
+	// No `stock` block. It reported products.stock_quantity, frozen at the RFC-0021
+	// W7 write cutover — a number that could not change. The `availability` block
+	// below answers from inventory-service and is deliberately the ONLY stock answer
+	// here: two answers with one of them stale is how a caller trusts the wrong one.
 	response := gin.H{
 		"product": details.Product,
 		"reviews": details.Reviews,

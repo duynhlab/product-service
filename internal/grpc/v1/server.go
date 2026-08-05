@@ -36,62 +36,24 @@ func NewServer(svc CatalogReader) *Server {
 	return &Server{svc: svc}
 }
 
-// maxGetProductsBatch caps a single GetProducts call. The checkout path is
+// maxPriceBatch caps a single BatchGetCurrentPrices call. The checkout path is
 // naturally bounded by cart size, but the method is callable by any
 // in-network workload (no Kong in front) — the cap stops an oversized
 // ANY() scan from being a DoS amplifier (security-review finding).
-const maxGetProductsBatch = 200
-
-// GetProducts is the batch price/availability read used by checkout
-// re-validation (RFC-0015). The response contains only the requested ids
-// that exist; prices convert to int64 minor units once, at this boundary.
-func (s *Server) GetProducts(
-	ctx context.Context,
-	req *productv1.GetProductsRequest,
-) (*productv1.GetProductsResponse, error) {
-	if len(req.GetProductIds()) == 0 {
-		return nil, status.Error(codes.InvalidArgument, "product_ids is required")
-	}
-	if len(req.GetProductIds()) > maxGetProductsBatch {
-		return nil, status.Error(codes.InvalidArgument, "too many product_ids in one call")
-	}
-
-	products, err := s.svc.GetProductsByIDs(ctx, req.GetProductIds())
-	if err != nil {
-		return nil, status.Error(codes.Internal, "get products failed")
-	}
-
-	out := make([]*productv1.ProductInfo, 0, len(products))
-	for _, p := range products {
-		qty := p.StockQuantity
-		if qty > math.MaxInt32 {
-			qty = math.MaxInt32
-		}
-		if qty < 0 {
-			qty = 0
-		}
-		out = append(out, &productv1.ProductInfo{
-			ProductId: p.ID,
-			Name:      p.Name,
-			// The catalog stores float dollars; the wire contract is int64
-			// minor units. Round once, at this boundary.
-			PriceMinor:   int64(math.Round(p.Price * 100)),
-			AvailableQty: int32(qty), //nolint:gosec // clamped above
-		})
-	}
-	return &productv1.GetProductsResponse{Products: out}, nil
-}
+const maxPriceBatch = 200
 
 // defaultCurrency is the platform money currency (RFC-0010: prices are USD
 // minor units). The catalog has no per-product currency column — this is a
 // single-currency platform — so every CurrentPrice reports USD.
 const defaultCurrency = "USD"
 
-// BatchGetCurrentPrices is the price-only successor to GetProducts (RFC-0021:
-// availability moves to inventory.v1). It reuses the same cache-bypassing,
-// DB-truth batch read as GetProducts — product is the price authority at
-// checkout — and returns only prices, no stock fields. Unknown SKUs are
-// omitted, matching GetProducts; sku_id == product id in this phase.
+// BatchGetCurrentPrices is checkout's price authority: a cache-bypassing, DB-truth
+// batch read that returns prices only. Availability is inventory.v1's answer.
+// Unknown SKUs are omitted rather than erroring; sku_id == product id in this
+// phase.
+//
+// It replaced GetProducts, which also reported available_qty from product's own
+// stock column — removed in RFC-0021 phase 4 once checkout had migrated.
 func (s *Server) BatchGetCurrentPrices(
 	ctx context.Context,
 	req *productv1.BatchGetCurrentPricesRequest,
@@ -101,7 +63,7 @@ func (s *Server) BatchGetCurrentPrices(
 	}
 	// Same cap as GetProducts: the method is callable by any in-network
 	// workload, so bound the ANY() scan to stop an oversized DoS amplifier.
-	if len(req.GetSkuIds()) > maxGetProductsBatch {
+	if len(req.GetSkuIds()) > maxPriceBatch {
 		return nil, status.Error(codes.InvalidArgument, "too many sku_ids in one call")
 	}
 

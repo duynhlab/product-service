@@ -221,7 +221,7 @@ func TestCreateProduct_ServiceError(t *testing.T) {
 func TestGetProductDetails_NoReviews(t *testing.T) {
 	// nil reviewFetcher → soft-fail no-reviews path; product + related still aggregate.
 	repo := &mockProductRepo{
-		product: &domain.Product{ID: "1", Name: "Widget", StockQuantity: 3},
+		product: &domain.Product{ID: "1", Name: "Widget"},
 		related: []domain.Product{{ID: "2"}},
 	}
 	c, rec := newCtx(http.MethodGet, "/product/v1/public/products/1/details", gin.Params{{Key: "id", Value: "1"}})
