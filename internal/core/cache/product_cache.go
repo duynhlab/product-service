@@ -225,12 +225,6 @@ func (c *ProductCache) SetProductList(ctx context.Context, filters domain.Produc
 	return c.client.Set(ctx, key, data, jitter(c.ttlList))
 }
 
-// InvalidateProduct deletes a single product from cache
-func (c *ProductCache) InvalidateProduct(ctx context.Context, id string) error {
-	key := c.generateProductKey(id)
-	return c.client.Delete(ctx, key)
-}
-
 // InvalidateProductList deletes all product list cache keys
 // Uses a SCAN over the "product:list:*" pattern so every cached list
 // variant is invalidated, not just a hardcoded subset.

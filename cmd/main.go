@@ -39,8 +39,8 @@ import (
 )
 
 // startGRPC starts the internal gRPC server on cfg.GRPC.Port, serving
-// ProductService (ReserveStock/ReleaseStock for the order-fulfillment saga)
-// alongside the HTTP listener. It uses the shared grpcx bootstrap (OpenTelemetry,
+// ProductService (checkout's price reads; the order saga's stock steps were
+// removed in RFC-0021 phase 4) alongside the HTTP listener. It uses the shared grpcx bootstrap (OpenTelemetry,
 // health, reflection) and returns nil only if the listener can't bind.
 func startGRPC(cfg *config.Config, logger *zap.Logger, svc *logicv1.ProductService) *grpc.Server {
 	lc := net.ListenConfig{}
