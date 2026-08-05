@@ -267,21 +267,31 @@ func main() {
 	// Initialize services (Logic layer) with dependency injection
 	productService := logicv1.NewProductService(productRepo, productCache, reviewClient)
 
-	// RFC-0021 P2-6: inventory availability enrichment for GetProductDetails,
-	// only when explicitly selected. Soft-fail like the review enrichment — a
-	// dial failure disables it and logs, never blocks startup (the detail page
-	// keeps showing Product's own stock).
-	if cfg.AvailabilitySource == "inventory" {
-		invConn, ierr := grpcx.Dial(cfg.InventoryGRPCAddr)
-		if ierr != nil {
-			logger.Error("inventory availability enrichment disabled: dial failed",
-				zap.String("addr", cfg.InventoryGRPCAddr), zap.Error(ierr))
-		} else {
-			defer func() { _ = invConn.Close() }()
-			productService = productService.WithAvailability(v1.NewInventoryClient(invConn))
-			logger.Info("Inventory availability enrichment enabled",
-				zap.String("inventory_grpc_addr", cfg.InventoryGRPCAddr))
-		}
+	// Inventory availability for GetProductDetails. NOT optional any more.
+	//
+	// This used to be gated behind PRODUCT_AVAILABILITY_SOURCE=product|inventory,
+	// defaulting to `product`. That default is now a trap: since 1.8.0 the `product`
+	// position means the detail page carries NO availability at all — the frozen
+	// stock block it used to fall back to is gone, and 1.10.0 dropped the column
+	// underneath it. A flag whose off position silently removes information from a
+	// customer-facing page is worse than no flag, and it is the third time in this
+	// migration that a default pointed at an authority that had already been removed.
+	//
+	// The dial still soft-fails: an unreachable inventory resolves each request to
+	// {"status":"unknown"}, which the SPA renders as unknown and still allows an
+	// add-to-cart, because checkout is where availability is enforced (fail-closed,
+	// retryable 503). So there is nothing left for a flag to buy — "turn it off" and
+	// "inventory is down" are the same code path, and the second one is already
+	// handled.
+	invConn, ierr := grpcx.Dial(cfg.InventoryGRPCAddr)
+	if ierr != nil {
+		logger.Error("inventory availability unavailable: dial failed — /details will report status=unknown",
+			zap.String("addr", cfg.InventoryGRPCAddr), zap.Error(ierr))
+	} else {
+		defer func() { _ = invConn.Close() }()
+		productService = productService.WithAvailability(v1.NewInventoryClient(invConn))
+		logger.Info("Inventory availability enabled",
+			zap.String("inventory_grpc_addr", cfg.InventoryGRPCAddr))
 	}
 	logger.Info("Product service initialized")
 

@@ -42,10 +42,13 @@ type Availability struct {
 	AvailableToPromise int64 `json:"available_to_promise,omitempty"`
 }
 
-// AvailabilityFetcher fetches inventory availability for a SKU (RFC-0021 P2-6).
+// AvailabilityFetcher fetches inventory availability for a SKU (RFC-0021).
 // Implemented by the web-layer InventoryClient (gRPC transport stays in web).
-// Wired only when PRODUCT_AVAILABILITY_SOURCE=inventory; otherwise nil and the
-// detail page keeps showing Product's own stock only.
+//
+// Always wired in the serving path since the flag that gated it was removed — its
+// `product` position stopped meaning anything once product's own stock left the
+// response. It stays an interface (and nil-tolerant below) because the logic layer
+// must not know about gRPC, and unit tests construct the service without it.
 type AvailabilityFetcher interface {
 	GetAvailability(ctx context.Context, skuID string, logger *zap.Logger) (Availability, error)
 }
@@ -117,14 +120,19 @@ func (s *ProductService) GetProductDetails(ctx context.Context, id string, logge
 	return details, nil
 }
 
-// enrichAvailability adds inventory-sourced availability to the detail view
-// (RFC-0021 P2-6). The product id IS the inventory sku_id (RFC-0021 key
-// decision: sku_id = product_id initially), so the same id keys both. Soft-fail:
-// a nil fetcher (enrichment disabled) leaves it off entirely; a fetch error
-// reports {Status: unknown} rather than failing the page (Product's own stock is
-// still on the response). NOTE: until the phase-3 write cutover inventory is not
-// live-written, so an enabled enrichment reflects the backfill snapshot — it is
-// advisory, gated behind PRODUCT_AVAILABILITY_SOURCE.
+// enrichAvailability adds inventory-sourced availability to the detail view. The
+// product id IS the inventory sku_id (RFC-0021 key decision: sku_id = product_id
+// initially), so the same id keys both.
+//
+// Soft-fail, and this is the whole availability story on this page now that
+// product's own stock has left the response: a fetch error reports
+// {Status: unknown} rather than failing the page, and the SPA treats unknown as
+// PURCHASABLE — adding to a cart is not a reservation, and refusing the action
+// because a read degraded turns a lost read into a lost sale. Checkout is where
+// availability is enforced, and it fails closed there.
+//
+// A nil fetcher leaves the block off entirely. That is a test seam, not a runtime
+// mode: the serving path always wires one.
 func (s *ProductService) enrichAvailability(ctx context.Context, id string, details *ProductDetails, logger *zap.Logger) {
 	if s.availabilityFetcher == nil {
 		return

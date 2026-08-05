@@ -28,7 +28,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/duynhlab/pkg/flagx"
 	"github.com/joho/godotenv"
 )
 
@@ -51,7 +50,6 @@ type Config struct {
 	ReviewGRPCAddr      string // Review service gRPC target for aggregation - from REVIEW_GRPC_ADDR env
 	// RFC-0021 P2-6: inventory availability enrichment for product details.
 	InventoryGRPCAddr  string // inventory.v1 target - from INVENTORY_GRPC_ADDR env
-	AvailabilitySource string // product|inventory - from PRODUCT_AVAILABILITY_SOURCE env (default product), startup-validated
 }
 
 // GRPCConfig defines the internal gRPC server (east-west only). gRPC is the
@@ -182,7 +180,6 @@ func Load() *Config {
 		ReadinessDrainDelay: getEnvDurationSecondsWithMax("READINESS_DRAIN_DELAY", 5, 30),
 		ReviewGRPCAddr:      getEnv("REVIEW_GRPC_ADDR", "dns:///review.review.svc.cluster.local:9090"),
 		InventoryGRPCAddr:   getEnv("INVENTORY_GRPC_ADDR", "dns:///inventory-grpc.inventory.svc.cluster.local:9090"),
-		AvailabilitySource:  flagx.MustEnum("PRODUCT_AVAILABILITY_SOURCE", "product", "product", "inventory"),
 		GRPC: GRPCConfig{
 			Port: getEnv("GRPC_PORT", "9090"),
 		},
