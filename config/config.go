@@ -42,7 +42,7 @@ type Config struct {
 	Logging         LoggingConfig   // Structured logging (Zap)
 	Database        DatabaseConfig  // PostgreSQL database configuration
 	Cache           CacheConfig     // Valkey/Redis cache configuration
-	GRPC            GRPCConfig      // Internal gRPC server (east-west: order-fulfillment saga)
+	GRPC            GRPCConfig      // Internal gRPC server (east-west: checkout price reads)
 	ShutdownTimeout int             // Graceful shutdown timeout in seconds - from SHUTDOWN_TIMEOUT env (default: 10)
 	// ReadinessDrainDelay: delay after failing readiness before shutting down the HTTP server.
 	// This gives Kubernetes/Service routing time to stop sending new traffic.
@@ -55,7 +55,8 @@ type Config struct {
 }
 
 // GRPCConfig defines the internal gRPC server (east-west only). gRPC is the
-// official transport for the order-fulfillment saga's ReserveStock/ReleaseStock.
+// official transport for checkout's price re-validation reads. It also served the
+// order saga's stock steps until RFC-0021 phase 4 removed them.
 type GRPCConfig struct {
 	Port string // GRPC_PORT (default "9090")
 }

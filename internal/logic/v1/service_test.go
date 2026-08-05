@@ -15,9 +15,11 @@ import (
 // memCacheClient is an in-memory cache.CacheClient for exercising the
 // Cache-Aside branches of the logic layer. Always a cache miss on first read.
 type memCacheClient struct {
-	mu        sync.Mutex
-	data      map[string][]byte
-	deleteErr error // when set, Delete returns it (to exercise the error branch)
+	mu   sync.Mutex
+	data map[string][]byte
+	// patternErr, when set, makes DeleteByPattern fail — the reachable
+	// cache-invalidation error branch (CreateProduct fails open on it).
+	patternErr error
 }
 
 func newMemCacheClient() *memCacheClient {
@@ -50,9 +52,6 @@ func (m *memCacheClient) SetNX(_ context.Context, key string, value []byte, _ ti
 func (m *memCacheClient) Delete(_ context.Context, key string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if m.deleteErr != nil {
-		return m.deleteErr
-	}
 	delete(m.data, key)
 	return nil
 }
@@ -66,7 +65,7 @@ func (m *memCacheClient) DeleteIfEqual(_ context.Context, key string, value []by
 	return nil
 }
 
-func (m *memCacheClient) DeleteByPattern(_ context.Context, _ string) error { return nil }
+func (m *memCacheClient) DeleteByPattern(_ context.Context, _ string) error { return m.patternErr }
 
 func (m *memCacheClient) Close() error { return nil }
 
@@ -184,6 +183,29 @@ func TestCreateProductInvalidatesCache(t *testing.T) {
 	}
 	if got == nil || got.ID == "" {
 		t.Errorf("CreateProduct() expected product with ID, got %v", got)
+	}
+}
+
+// A cache that cannot be invalidated must not fail the create. The product is
+// already committed at that point, so failing the request would report a
+// non-event as an error and invite a retry that creates a second product; the
+// stale list expires on its TTL instead.
+//
+// This branch had no test of its own until RFC-0021 phase 4: the knob that
+// reached the cache-error path was wired to Delete, exercised only by the
+// reserve/release tests that removal deleted. The reachable path goes through
+// DeleteByPattern.
+func TestCreateProductFailsOpenOnCacheInvalidationError(t *testing.T) {
+	mem := newMemCacheClient()
+	mem.patternErr = errors.New("valkey down")
+	svc := NewProductService(&stubProductRepo{}, cache.NewProductCache(mem, time.Minute, time.Minute), nil)
+
+	got, err := svc.CreateProduct(context.Background(), domain.CreateProductRequest{Name: "Widget", Price: 1.5})
+	if err != nil {
+		t.Fatalf("CreateProduct() = %v, want nil — a cache error must not fail a committed create", err)
+	}
+	if got == nil || got.ID == "" {
+		t.Errorf("CreateProduct() = %v, want the created product", got)
 	}
 }
 

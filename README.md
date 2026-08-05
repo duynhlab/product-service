@@ -26,13 +26,14 @@ Operational endpoints: `GET /health`, `GET /ready` (503 while draining), `GET /m
 
 `product-service` is both a gRPC **server** and **client** on the east-west transport.
 
-**Server — `product.v1.ProductService` (`GRPC_PORT`, default `:9090`):** the
-order saga's inventory steps, called by `order-worker`:
+**Server — `product.v1.ProductService` (`GRPC_PORT`, default `:9090`):** a READ
+surface. The stock write RPCs (`ReserveStock` / `ReleaseStock`) were **removed in
+RFC-0021 phase 4** — inventory-service is the stock authority, and the order saga's
+product branch was deleted in order 1.13.0:
 
 | RPC | Purpose |
 |-----|---------|
-| `ReserveStock` | Atomic stock decrement + `stock_reservations` ledger, idempotent by `reservation_id` (= order id); insufficient stock → `FailedPrecondition` (non-retryable) |
-| `ReleaseStock` | Saga compensation — the ledger is authoritative (request items ignored) |
+| `BatchGetCurrentPrices` | Price-only batch read (RFC-0021), DB-truth like `GetProducts`; unknown SKUs omitted |
 | `GetProducts` | Batch price/availability read for checkout re-validation (RFC-0015) — cache-bypassing (product is the price authority at checkout time), prices in int64 minor units, unknown ids omitted |
 
 **Client — review aggregation:** on `GET /product/v1/public/products/:id/details` it
@@ -92,7 +93,7 @@ Config is loaded from environment variables (with `.env` support for local dev) 
 | `CACHE_TTL_PRODUCT_LIST` | `5m` | Product-list cache TTL |
 | `CACHE_TTL_PRODUCT_DETAIL` | `10m` | Single-product cache TTL |
 | `CACHE_PASSWORD` / `CACHE_DB` | `""` / `0` | Valkey auth (optional) + database index |
-| `GRPC_PORT` | `9090` | gRPC listen port (`ProductService` — saga stock steps) |
+| `GRPC_PORT` | `9090` | gRPC listen port (`ProductService` — checkout price reads) |
 | `TRACING_ENABLED` | `true` | Toggle OTel tracing |
 | `OTEL_COLLECTOR_ENDPOINT` | `otel-collector-opentelemetry-collector.monitoring.svc.cluster.local:4318` | OTLP endpoint |
 | `OTEL_SAMPLE_RATE` | `0.1` | Trace sample rate (0.0–1.0) |

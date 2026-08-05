@@ -2,7 +2,11 @@ package domain
 
 import "context"
 
-// ProductRepository defines the interface for product data access
+// ProductRepository defines the interface for product data access.
+//
+// It has no stock operations: RFC-0021 phase 4 removed them, inventory-service is
+// the authority, and the stock_quantity values this repository still SELECTs are
+// frozen leftovers pending their own removal.
 type ProductRepository interface {
 	// Basic CRUD operations
 	FindByID(ctx context.Context, id string) (*Product, error)
@@ -19,27 +23,6 @@ type ProductRepository interface {
 
 	// Count returns the total number of products matching the filters
 	Count(ctx context.Context, filters ProductFilters) (int, error)
-
-	// Inventory operations for the order-fulfillment saga (Temporal).
-
-	// ReserveStock atomically decrements stock for every item and records the
-	// reservation in one transaction. It is all-or-nothing: if any item lacks
-	// stock, nothing is reserved and ErrInsufficientStock is returned. Idempotent
-	// by reservationID — a repeat call reserves at most once.
-	ReserveStock(ctx context.Context, reservationID string, items []ReservationItem) error
-
-	// ReleaseStock restores stock for an active reservation and marks it released
-	// (the compensation for ReserveStock). Idempotent: a no-op when the
-	// reservation is unknown or already released. The recorded reservation is the
-	// source of truth for what to restore. Returns the ids of the products whose
-	// stock was restored, so callers can invalidate their caches (empty on a no-op).
-	ReleaseStock(ctx context.Context, reservationID string) ([]string, error)
-}
-
-// ReservationItem is a product/quantity pair within a stock reservation.
-type ReservationItem struct {
-	ProductID string
-	Quantity  int
 }
 
 // ProductFilters defines filtering options for product queries
