@@ -238,6 +238,20 @@ func TestGetProductDetails_NoReviews(t *testing.T) {
 	if _, ok := body["reviews_summary"]; !ok {
 		t.Errorf("response missing reviews_summary field: %s", rec.Body.String())
 	}
+	// No `stock` block, and no stock_quantity inside `product`: both reported a
+	// column frozen at the RFC-0021 W7 write cutover. Availability comes from
+	// inventory-service now, and a stale second answer beside it is how a caller
+	// ends up trusting the wrong one.
+	if _, ok := body["stock"]; ok {
+		t.Errorf("response still carries the frozen stock block: %s", rec.Body.String())
+	}
+	product, ok := body["product"].(map[string]any)
+	if !ok {
+		t.Fatalf("product is %T, want an object: %s", body["product"], rec.Body.String())
+	}
+	if _, ok := product["stock_quantity"]; ok {
+		t.Errorf("product still publishes stock_quantity: %s", rec.Body.String())
+	}
 }
 
 func TestGetProductDetails_NotFound(t *testing.T) {
