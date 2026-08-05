@@ -28,7 +28,7 @@ func NewPostgresProductRepository(pool *pgxpool.Pool) *PostgresProductRepository
 // FindByID retrieves a product by ID
 func (r *PostgresProductRepository) FindByID(ctx context.Context, id string) (*domain.Product, error) {
 	query := `
-		SELECT p.id, p.name, p.description, p.price, COALESCE(c.name, 'Uncategorized') as category, p.stock_quantity
+		SELECT p.id, p.name, p.description, p.price, COALESCE(c.name, 'Uncategorized') as category
 		FROM products p
 		LEFT JOIN categories c ON p.category_id = c.id
 		WHERE p.id = $1
@@ -37,7 +37,7 @@ func (r *PostgresProductRepository) FindByID(ctx context.Context, id string) (*d
 	var product domain.Product
 	var idInt int
 	err := r.pool.QueryRow(ctx, query, id).Scan(
-		&idInt, &product.Name, &product.Description, &product.Price, &product.Category, &product.StockQuantity,
+		&idInt, &product.Name, &product.Description, &product.Price, &product.Category,
 	)
 
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -70,7 +70,7 @@ func (r *PostgresProductRepository) FindByIDs(ctx context.Context, ids []string)
 	}
 
 	query := `
-		SELECT p.id, p.name, p.description, p.price, COALESCE(c.name, 'Uncategorized') as category, p.stock_quantity
+		SELECT p.id, p.name, p.description, p.price, COALESCE(c.name, 'Uncategorized') as category
 		FROM products p
 		LEFT JOIN categories c ON p.category_id = c.id
 		WHERE p.id = ANY($1)
@@ -85,7 +85,7 @@ func (r *PostgresProductRepository) FindByIDs(ctx context.Context, ids []string)
 	for rows.Next() {
 		var p domain.Product
 		var idInt int
-		if err := rows.Scan(&idInt, &p.Name, &p.Description, &p.Price, &p.Category, &p.StockQuantity); err != nil {
+		if err := rows.Scan(&idInt, &p.Name, &p.Description, &p.Price, &p.Category); err != nil {
 			return nil, err
 		}
 		p.ID = strconv.Itoa(idInt)
@@ -96,10 +96,8 @@ func (r *PostgresProductRepository) FindByIDs(ctx context.Context, ids []string)
 
 // FindAll retrieves all products with optional filtering
 func (r *PostgresProductRepository) FindAll(ctx context.Context, filters domain.ProductFilters) ([]domain.Product, error) {
-	// stock_quantity rides along like it does in FindByID — the list and the
-	// detail page must not disagree about whether a product is in stock.
 	query := `
-		SELECT p.id, p.name, p.description, p.price, COALESCE(c.name, 'Uncategorized') as category, p.stock_quantity
+		SELECT p.id, p.name, p.description, p.price, COALESCE(c.name, 'Uncategorized') as category
 		FROM products p
 		LEFT JOIN categories c ON p.category_id = c.id
 		WHERE 1=1
@@ -159,7 +157,7 @@ func (r *PostgresProductRepository) FindAll(ctx context.Context, filters domain.
 	for rows.Next() {
 		var product domain.Product
 		var idInt int
-		err := rows.Scan(&idInt, &product.Name, &product.Description, &product.Price, &product.Category, &product.StockQuantity)
+		err := rows.Scan(&idInt, &product.Name, &product.Description, &product.Price, &product.Category)
 		if err != nil {
 			return nil, err
 		}

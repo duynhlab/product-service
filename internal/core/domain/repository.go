@@ -4,9 +4,10 @@ import "context"
 
 // ProductRepository defines the interface for product data access.
 //
-// It has no stock operations: RFC-0021 phase 4 removed them, inventory-service is
-// the authority, and the stock_quantity values this repository still SELECTs are
-// frozen leftovers pending their own removal.
+// It has no stock anything: RFC-0021 phase 4 removed the operations, and then the
+// reads. inventory-service is the authority, and no query here names
+// products.stock_quantity any more — which is what makes dropping that column
+// possible.
 type ProductRepository interface {
 	// Basic CRUD operations
 	FindByID(ctx context.Context, id string) (*Product, error)
