@@ -24,7 +24,6 @@ jobs:
       lint: true
       integration: true
       integration-command: 'go test -tags=integration -covermode=atomic -coverprofile=coverage-integration.out ./internal/core/repository/...'
-    secrets: inherit
 
   gitleaks:
     uses: duynhlab/gha-workflows/.github/workflows/gitleaks.yml@main

@@ -21,7 +21,6 @@ jobs:
       lint: true
       integration: true
       integration-command: 'go test -tags=integration -covermode=atomic -coverprofile=coverage-integration.out ./internal/core/repository/...'
-    secrets: inherit
 
   gitleaks:
     uses: duynhlab/gha-workflows/.github/workflows/gitleaks.yml@main
@@ -49,7 +48,6 @@ jobs:
       scan-before-push: true
       scan-severity: 'CRITICAL,HIGH'
       scan-exit-code: '1'
-    secrets: inherit
     permissions:
       contents: read
       packages: write
@@ -64,7 +62,11 @@ jobs:
       severity: 'CRITICAL,HIGH,MEDIUM'
       exit-code: '0'
       ignore-unfixed: true
-    secrets: inherit
+    # Named, not inherited: these two are the only secrets trivy-scan declares
+    # (both optional — it writes a Sheets report when they are present).
+    secrets:
+      GSHEET_CLIENT_EMAIL: ${{ secrets.GSHEET_CLIENT_EMAIL }}
+      GSHEET_PRIVATE_KEY: ${{ secrets.GSHEET_PRIVATE_KEY }}
     permissions:
       contents: read
       packages: read
@@ -76,7 +78,6 @@ jobs:
     with:
       tags: ${{ needs.docker-build.outputs.tags }}
       digest: ${{ needs.docker-build.outputs.digest }}
-    secrets: inherit
     permissions:
       contents: read
       packages: write
@@ -88,7 +89,6 @@ jobs:
     needs: [go-check, sonar]
     if: startsWith(github.ref, 'refs/tags/v')
     uses: duynhlab/gha-workflows/.github/workflows/goreleaser.yml@main
-    secrets: inherit
     permissions:
       contents: write
       id-token: write
