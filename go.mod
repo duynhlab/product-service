@@ -4,7 +4,13 @@ go 1.26.2
 
 require (
 	github.com/alicebob/miniredis/v2 v2.38.0
-	github.com/duynhlab/pkg v0.35.0
+	github.com/duynhlab/pkg/dbx v0.36.0
+	github.com/duynhlab/pkg/grpcx v0.36.0
+	github.com/duynhlab/pkg/httpx v0.36.0
+	github.com/duynhlab/pkg/logger/zapx v0.36.0
+	github.com/duynhlab/pkg/migratex v0.36.0
+	github.com/duynhlab/pkg/obsx v0.36.0
+	github.com/duynhlab/pkg/proto v0.36.0
 	github.com/gin-gonic/gin v1.12.0
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/joho/godotenv v1.5.1
@@ -126,6 +132,3 @@ require (
 	google.golang.org/protobuf v1.36.11 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
-
-// For local development with pkg
-// replace github.com/duynhlab/pkg => ../pkg
