@@ -1,196 +1,173 @@
 # AGENTS.md
 
-Agent-focused contributor guide for `product-service`. Read this before making
-changes. Keep edits surgical and match existing patterns.
+Agent-focused guide for `product-service`. Keep changes minimal, verified
+against the code, and consistent with existing patterns.
+
+## Authority and scope
+
+This repository implements the service. It does **not** define the contract.
+
+- **Canonical contract:** [`homelab/docs/api/product.md`](https://github.com/duynhlab/homelab/blob/main/docs/api/product.md)
+- **Shared API rules:** [`homelab/docs/api/api.md`](https://github.com/duynhlab/homelab/blob/main/docs/api/api.md)
+
+Implement against those files. When this repository and the contract disagree,
+**stop and classify the mismatch** using
+[Resolving a mismatch](https://github.com/duynhlab/homelab/blob/main/docs/api/README.md#resolving-a-mismatch)
+before changing either side. One class — an implementation that violates the
+intended contract — **blocks the release tag**.
+
+No route, RPC, payload or error inventory belongs in this file. Manifests,
+gateway routing, NetworkPolicy, database topology and platform observability
+belong to [duynhlab/homelab](https://github.com/duynhlab/homelab).
 
 ## Contribution workflow
 
-- **Never push to `main`.** Branch, open a PR, let CI gate the merge.
+- Never commit or push to `main`. Branch first, then open a PR.
 - Branch names use conventional prefixes: `feat/`, `fix/`, `docs/`, `chore/`,
-  `refactor/`.
-- PRs are **squash-merged** — keep the branch focused on one change.
-- Commit subjects: ≤ 50 chars, imperative mood, capitalised, no trailing period
-  (`Move review summary into logic layer`).
-- Commit body (only when non-trivial): wrap at 72 chars, explain *what* and
-  *why*, one blank line after the subject.
-- **No attribution trailers** (`Signed-off-by`, `Co-authored-by`,
-  `Generated-by`, …). **No** issue references (`Fixes #123`) and **no**
-  `@`-mentions in commit messages — put those in the PR description.
-
-## Code quality
-
-- Idiomatic Go; follow existing patterns over personal preference.
-- Pass `ctx context.Context` as the first argument; never store it on a struct.
-- Wrap errors with `fmt.Errorf("...: %w", err)`; use `errors.New` when there is
-  no format verb (`perfsprint`). Domain errors live in `internal/.../errors.go`
-  and are compared with `errors.Is`.
-- Always check returned errors (`errcheck`); use `_ =` only with intent.
-- Inject dependencies via constructors (see `NewProductService`,
-  `NewProductHandler`); optional deps (cache, review client) are nilable.
-- Use `net.JoinHostPort` for host:port, `http.NewRequestWithContext` for
-  outbound calls, and extract repeated literals to constants (`goconst`).
-- Tests are table-driven; CI runs them with `-race`.
-
-## Project overview
-
-Product catalog microservice for the `duynhlab` platform. Module path
-`github.com/duynhlab/product-service` (Go 1.26). It serves product listings,
-single-product reads, and an aggregated product-details endpoint backed by
-Valkey caching. It is a gRPC **client only** (no gRPC server): the details
-endpoint calls `review-service` over gRPC to enrich a product with its reviews.
-
-## Repository layout
-
-```
-product-service/
-├── cmd/main.go                       # wiring, middleware, graceful shutdown
-├── config/config.go                  # env-driven config + validation
-├── db/migrations/                    # golang-migrate migrations, embedded via embed.go
-│   └── sql/                          # 000001_*.up.sql.. schema/seed
-├── internal/
-│   ├── web/v1/                       # HTTP handlers, DTO mapping, gRPC review client
-│   │   ├── handler.go                # Gin handlers, response assembly
-│   │   └── review_client.go          # gRPC ReviewClient (transport only)
-│   ├── logic/v1/                     # business rules + cache-aside (NO SQL, NO gin)
-│   │   ├── service.go                # ProductService: list/get/create/related
-│   │   ├── details.go                # GetProductDetails aggregation + ReviewFetcher
-│   │   └── errors.go                 # domain-level logic errors
-│   └── core/                         # domain, repositories, DB, cache
-│       ├── domain/                   # models + repository interfaces
-│       ├── repository/               # pgx/v5 PostgreSQL implementations (SQL lives here)
-│       ├── database.go               # pgx connection pool
-│       └── cache/                    # Valkey (go-redis/v9) cache-aside client
-└── middleware/                       # tracing, logging
-```
+  `refactor/`, `test/`.
+- Commit subjects: imperative mood, capitalised, ≤ 50 characters, no trailing
+  period. Add a body wrapped at 72 characters when the change is non-trivial.
+- Do not add attribution trailers (`Signed-off-by`, `Co-authored-by`,
+  `Generated-by`, etc.), GitHub issue references, or `@`-mentions in commit
+  messages. Put issue links in the PR description.
+- One logical change per PR. PRs are squash-merged and CI must be green.
 
 ## Build, test, lint
 
+These are the commands CI runs, so a green local run means a green pipeline.
+
 ```bash
-GOTOOLCHAIN=auto go build ./...        # compile
-GOTOOLCHAIN=auto go vet ./...          # vet
-GOTOOLCHAIN=auto go test ./...         # tests (CI adds -race)
-golangci-lint run                      # lint (v2, config in .golangci.yml)
+go build ./...
+go vet ./...
+go test -race ./...
+go test -tags=integration ./internal/core/repository/...   # needs Docker (testcontainers)
+golangci-lint run
 ```
 
-Lint must pass — the `go-check` CI job rejects PRs with lint errors. `GOTOOLCHAIN=auto`
-lets the local toolchain match the `go 1.26.x` directive in `go.mod`.
+Sonar new-code coverage must be ≥80%; `**/cmd/**`, `**/db/migrations/**` and
+`**/core/repository/**` are excluded, everything else counts.
 
-### Testing conventions
+Local development against an unreleased `pkg`: `pkg` is one module per package,
+so its root has no `go.mod` and a single `replace github.com/duynhlab/pkg` can no
+longer resolve. Use one commented `replace` line per module — the trailer in
+`go.mod` shows the shape, and
+[`docs/api/pkg.md`](https://github.com/duynhlab/homelab/blob/main/docs/api/pkg.md)
+explains why.
 
-- **Unit tests** — stdlib `testing` only (no testify/gomock), hand-written mocks for
-  interfaces, table-driven subtests, in `*_test.go` next to the code: Web (`httptest`),
-  Logic (pure — mock the repo), gRPC (call handlers directly), the `core/cache` layer,
-  `middleware`, `config`. Run with `go test ./...` (no Docker).
-- **Integration tests** — `internal/core/repository` is tested against a **real Postgres**
-  via testcontainers, build-tagged `//go:build integration` (the default `go build`/`go test`
-  skip them, so the binary never links testcontainers). Run locally with Docker:
-  `go test -tags=integration ./internal/core/repository/...`. CI wires `integration: true`
-  (go-check) + `integration-coverage: true` (sonar), and merges both coverage profiles into
-  the ≥ 80% new-code gate.
-- **Before pushing**, both the unit run *and* the integration suite must be green locally —
-  green unit ≠ green CI (CI also runs integration with Docker).
+## Architecture boundaries
 
-- Before pushing or opening a PR, verify Sonar new-code coverage ≥80%: run
-  `go test -race -coverprofile=coverage.out ./...` and confirm changed lines are
-  covered, including BOTH branches of any new conditional. `**/cmd/**`,
-  `**/db/migrations/**`, `**/core/repository/**` are coverage-excluded;
-  everything else counts.
+**3-layer, dependencies flow one way only: transport → logic → core.**
 
-## Conventions
+This service is **both** a gRPC server and a gRPC client, and confusing the two
+has already caused a wrong claim in this file's history:
 
-### Three-layer architecture
+- **Server** — `internal/grpc/v1/` exposes the price RPC that checkout depends on.
+- **Clients** — `internal/web/v1/` holds the review and inventory clients. gRPC
+  transport stays in the web layer; logic sees only narrow interfaces, so the
+  detail aggregation can be tested without a network.
+- **Logic** — `internal/logic/v1/` holds the rules and the detail assembly.
+- **Core** — `internal/core/` owns the domain model, the repository, and the
+  cache.
 
-Strict, one-way dependency: **Web → Logic → Core**. Violations are rejected in
-review.
+Observability is wired once through `github.com/duynhlab/pkg/obsx`; the pool comes
+from `github.com/duynhlab/pkg/dbx`; the gRPC server is built by
+`github.com/duynhlab/pkg/grpcx`; responses use the shared
+`github.com/duynhlab/pkg/httpx` envelope.
 
-- **Web** (`internal/web/v1/`): HTTP handling, JSON binding, DTO mapping, error
-  → status translation, response assembly. No SQL, no business rules.
-- **Logic** (`internal/logic/v1/`): business rules, cache-aside, cross-service
-  aggregation. No SQL, no `database.GetPool()`, no `gin`, no `*gin.Context`.
-- **Core** (`internal/core/`): domain models, repository interfaces +
-  implementations (SQL lives here), DB pool, cache client. Imports nothing from
-  Web or Logic.
+## Invariants
 
-```mermaid
-flowchart LR
-    Web[Web v1<br/>handlers] --> Logic[Logic v1<br/>ProductService]
-    Logic --> Core[Core<br/>domain · repository · cache]
-    Core --> DB[(PostgreSQL)]
-    Core --> Cache[(Valkey)]
-```
+Rules an implementer can violate at the keyboard.
 
-### gRPC review aggregation (this service is a CLIENT)
+- **The price RPC deliberately bypasses the cache.** Product is the price
+  authority at checkout time, so the answer must be the current row, not a
+  possibly-stale copy. Adding it to the cache-aside path would be the single most
+  expensive "optimisation" available here.
+- **Money converts from float dollars to integer minor units exactly once, at the
+  gRPC boundary.** The catalog has no per-product currency column — this is a
+  single-currency platform, and the constant says so.
+- **The price batch is capped.** The RPC is callable by any in-network workload
+  with no gateway in front, so the cap is what stops an oversized query from
+  being a denial-of-service amplifier.
+- **The cache fails open.** A cache error is treated as a miss and the read
+  degrades to the database, so a Valkey outage slows the catalog rather than
+  breaking it.
+- **The stampede lock is released by compare-and-delete**, so a fetch that
+  overran its lock TTL cannot delete a successor's lock. A plain delete
+  reintroduces exactly the stampede the lock prevents.
+- **List cache keys are hashed over the canonical filter tuple, and the prefix is
+  preserved.** Hashing stops a free-text search containing the separator from
+  colliding with a different filter set and serving the wrong results; keeping the
+  prefix is what lets invalidation still match every variant.
+- **Invalidation covers the list cache only.** Single-product entries have no
+  invalidation hook and are stale until their TTL. That is a known, documented
+  boundary — do not quietly widen it without updating the contract.
+- **Availability is inventory's answer, always wired, and soft-fails.** The flag
+  that used to gate it was deliberately deleted: a flag whose off position
+  silently removes information from a customer-facing page is worse than no flag,
+  because "turned off" and "inventory is down" become the same code path.
+- **Unknown availability is omitted, never zeroed.** A zero would be
+  indistinguishable from genuinely no stock. The storefront treats unknown as
+  purchasable on purpose — checkout is where availability is enforced, and it
+  fails closed there.
+- **There is exactly one availability answer on the detail page.** Never re-add a
+  stock block alongside it: two answers with one of them stale is how a caller
+  ends up trusting the wrong one.
+- **Reviews soft-fail to an empty list and a zero summary** — a review outage must
+  not take down a product page.
+- **Sort input never reaches `ORDER BY` raw** — it goes through an allowlist with
+  a safe fallback.
+- **Pooler-safe database settings live in `pkg/dbx`.** One DSN serves the app and
+  migrations so both connect identically.
+- **`seed` is development-only** and refuses production, and seeds live outside
+  the migration chain on purpose — `migrate` runs everywhere, including
+  production, and must never insert demo products.
+- **The one down migration is hand-applied only.** It is committed for the record
+  but unreachable at runtime, because the migrate CLI cannot read an `embed.FS`
+  compiled into another binary. It restores shape, not data.
+- **Graceful-shutdown ordering is load-bearing:** fail readiness → drain delay →
+  HTTP → gRPC `GracefulStop` → cache → pool → OTel last.
+- **Metric labels are a bounded enum.** The cache hit/miss counter exists because
+  the Redis client's own instrumentation sees GETs, not their semantic outcome.
+- **Probe suppression is one contract across spans, RED metrics and logs**, driven
+  by the same skip list; a **failing** probe is still recorded. 4xx logs at warn,
+  5xx at error.
+- **No service-level CORS.** A hardcoded localhost allowlist once turned every
+  browser call into a 403 on the cluster. The edge owns CORS.
 
-The product-details endpoint (`GET /product/v1/public/products/:id/details`)
-aggregates reviews from `review-service`.
+## Repository map
 
-- Aggregation lives in the **Logic** layer: `ProductService.GetProductDetails`
-  (`internal/logic/v1/details.go`) composes product + related products + reviews
-  and computes the summary via `ComputeReviewsSummary`.
-- gRPC **transport stays in Web**: `ReviewClient` (`review_client.go`) calls
-  `review.v1.ReviewService/GetProductReviews` and maps the proto to the local
-  `logicv1.Review`. It is injected into Logic through the `ReviewFetcher`
-  interface, so Logic never imports gRPC.
-- Target: `REVIEW_GRPC_ADDR` (default `dns:///review.review.svc.cluster.local:9090`),
-  dialed via `grpcx.Dial` (otelgrpc client stats handler). Per-call deadline 3s.
-- **Soft-fail:** if the review client is nil or the call errors, details return
-  with an empty review list and a zeroed summary — the product still loads.
-
-### Cache-Aside (Valkey)
-
-- Read paths (`ListProducts`, `GetProduct`) use cache-aside in the Logic layer
-  via `core/cache`. `GetProduct` uses `GetProductOrSet` with **stampede
-  prevention** (SETNX lock) so only one request hits the DB on a miss.
-- `CreateProduct` invalidates the list cache after a successful write.
-- Cache is optional: when `CACHE_ENABLED=false` (or init fails) the service runs
-  with `productCache == nil` and goes straight to the repository.
-
-### Observability (`pkg/obsx`)
-
-- `obsx.SetupMetrics()` (in `main.go`) bridges otelgrpc client metrics into the
-  default Prometheus registry, so **gRPC client RED metrics (`rpc_client_*`)
-  surface on the existing `/metrics` endpoint** — no separate port.
-- `LoggingMiddleware` correlates logs to traces with
-  `obsx.TraceIDFromContext`.
-- HTTP middleware order: **tracing → logging**
-  (tracing first for context propagation; metrics come from otelgin/otelgrpc
-  and explicit instruments, not a third middleware).
-- **No service-level CORS** — CORS is handled by the Kong edge (global `cors`
-  plugin in both stacks). Do not re-add a CORS middleware here; a hardcoded
-  localhost allowlist once broke every browser call on the Kind cluster (403).
-- Spans are opened with `middleware.StartSpan`, tagged with a `layer` attribute
-  (`web` / `logic`).
-
-### Diagrams
-
-All diagrams MUST be Mermaid. Never ASCII art.
+- `cmd/main.go` — wiring, subcommand dispatch, HTTP + gRPC bootstrap, graceful shutdown
+- `config/config.go` — env config and validation
+- `internal/web/v1/` — HTTP handlers plus the review and inventory gRPC clients
+- `internal/grpc/v1/` — the `ProductService` server
+- `internal/logic/v1/` — business rules and the detail-page assembly
+- `internal/core/domain/` — models, repository interface, sentinel errors
+- `internal/core/repository/` — Postgres implementation
+- `internal/core/cache/` — Valkey client, cache-aside with stampede lock, cache metrics
+- `db/migrations/` — golang-migrate SQL, embedded
+- `db/seed/` — development-only demo seed, embedded separately from migrations
+- `middleware/` — tracing and logging only
 
 ## Gotchas
 
-- **Review aggregation is soft-fail** — do not turn a review-service outage into
-  a product-details 5xx. Preserve the empty-list + zero-summary fallback.
-- **Cache TTLs** differ: product list `5m` (`CACHE_TTL_PRODUCT_LIST`), single
-  product/detail `10m` (`CACHE_TTL_PRODUCT_DETAIL`). Don't conflate them.
-- **Kyverno image rules:** container images must be
-  `ghcr.io/duynhlab/<service>:<sha|vX.Y.Z>` — **never `:latest`**.
-- **Migrations:** golang-migrate v4.19.1 via `pkg/migratex`, run from the
-  `migrate` subcommand. SQL lives in `db/migrations/sql/000001_*.up.sql`
-  (forward-only `.up.sql`), embedded in the binary through `embed.FS`
-  (`db/migrations/embed.go`). The init container reuses the app image with
-  `args: ["migrate"]` — no separate migration image, Dockerfile, or `.trivyignore`.
-- `internal` routes (e.g. `POST /product/v1/internal/products`) are reachable
-  only via in-cluster service DNS — never expose them on the gateway.
+- Kyverno admission rejects a workload image tagged `:latest` or unpinned. The
+  published image is `ghcr.io/duynhlab/product-service/product-service:<tag>` —
+  the repository path repeats, and the tag carries no `v` prefix. There is no
+  separate migration image; the init container reuses the app image with
+  `args: ["migrate"]`.
+- Metrics leave over OTLP. There is no `/metrics` endpoint and nothing scrapes
+  this service.
+- A dead `insufficient stock` sentinel error is still mapped in the HTTP handler
+  and can no longer be returned. It is harmless, but do not treat it as evidence
+  that this service still knows about stock.
 
-## API reference
+## API change synchronization
 
-Routes mount directly at `/{service}/v1/{audience}/…` (single URL shape for
-browser and in-cluster callers; Kong is pass-through).
+An API change is not done when the code compiles.
 
-| Method | Path | Audience | Notes |
-|--------|------|----------|-------|
-| `GET` | `/product/v1/public/products` | public | List products (cached) |
-| `GET` | `/product/v1/public/products/:id` | public | Get product (cached) |
-| `GET` | `/product/v1/public/products/:id/details` | public | Aggregated product + reviews |
-| `POST` | `/product/v1/internal/products` | internal | Create product (admin/seed; invalidates cache) |
-
-Full inventory: [`homelab/docs/api/api-naming-convention.md`](https://github.com/duynhlab/homelab/blob/main/docs/api/api-naming-convention.md).
+- The contract in homelab and this repository move **together** — same change,
+  and either the same PR pair or an immediate follow-up.
+- Behaviour that is designed but not deployed is marked **`Planned`** in the
+  contract; it is never described as current.
+- A material mismatch between the contract and this implementation **blocks the
+  release tag** until it is reconciled or explicitly accepted.
