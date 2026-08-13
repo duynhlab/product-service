@@ -1,167 +1,67 @@
 # product-service
 
-Product catalog microservice with search, filtering, Valkey caching, and gRPC review aggregation.
+The product catalog, and the platform's price authority: what a SKU costs at
+checkout time.
 
-## Features
+## Responsibilities
 
-- Product listings with filtering, sorting, and pagination
-- Aggregated product details (product + stock + related products + reviews)
-- **Valkey caching** (Cache-Aside) with stampede prevention for product reads
-- **gRPC review aggregation**: fetches reviews from `review-service` over gRPC, soft-failing to an empty list when review is unavailable
+- **Owns:** products, categories, and current prices.
+- **Does not own:** stock and availability (`inventory-service`) or reviews
+  (`review-service`). Both appear on the product detail page as read-only
+  enrichments this service fetches and can live without. Product's own stock
+  surface was not deprecated — it was removed, schema included.
 
-## API Endpoints
+## Tech
 
-All routes follow Variant A naming — single path for browser and in-cluster callers. See [homelab naming convention](https://github.com/duynhlab/homelab/blob/main/docs/api/api-naming-convention.md).
+| Area | Technology |
+|------|------------|
+| Runtime | Go 1.26 |
+| Transports | HTTP (public catalog, one internal create) · gRPC server (prices) · gRPC client (reviews, availability) |
+| Data | PostgreSQL · Valkey for cache-aside reads |
+| Platform libraries | `dbx`, `grpcx`, `httpx`, `logger/zapx`, `migratex`, `obsx`, `proto` |
 
-| Method | Path | Audience |
-|--------|------|----------|
-| `GET` | `/product/v1/public/products` | public (cached) |
-| `GET` | `/product/v1/public/products/:id` | public (cached) |
-| `GET` | `/product/v1/public/products/:id/details` | public (aggregates reviews via gRPC) |
-| `POST` | `/product/v1/internal/products` | internal (admin/seed; in-cluster only) |
+## API
 
-Operational endpoints: `GET /health`, `GET /ready` (503 while draining), `GET /metrics`.
+- **Canonical contract:** [`homelab/docs/api/product.md`](https://github.com/duynhlab/homelab/blob/main/docs/api/product.md)
+- **Shared conventions:** [`homelab/docs/api/api.md`](https://github.com/duynhlab/homelab/blob/main/docs/api/api.md)
+- **Surfaces:** public HTTP for browsing and a detail page, one cluster-only
+  internal create, and `product.v1.ProductService` east-west — checkout asks it
+  for current prices. It is also a gRPC **client**: the detail page fetches
+  reviews and availability from their owners. HTTP `:8080` also carries
+  `/health` and `/ready`.
 
-## East-West gRPC
+Routes, payloads, RPC semantics and error codes live in the contract, so there
+is one place to change when they change.
 
-`product-service` is both a gRPC **server** and **client** on the east-west transport.
+## Run locally
 
-**Server — `product.v1.ProductService` (`GRPC_PORT`, default `:9090`):** one RPC, and
-it answers **price only**. RFC-0021 phase 4 emptied this contract of stock in order:
-the write RPCs (`ReserveStock`/`ReleaseStock`), then `GetProducts` — whose
-`available_qty` was the last place product answered an availability question, read
-from a column frozen at the write cutover. Availability is
-`inventory.v1/CheckAvailability`:
+Prefer the homelab **local-stack** — the detail page reaches two other services,
+and the cache is only interesting with real traffic.
 
-| RPC | Purpose |
-|-----|---------|
-| `BatchGetCurrentPrices` | Price-only batch read, DB-truth (cache-bypassing) — product is the price authority at checkout time; prices in int64 minor units, unknown SKUs omitted |
-
-**Client — review aggregation:** on `GET /product/v1/public/products/:id/details` it
-calls `review.v1.ReviewService/GetProductReviews` on `review-service` over gRPC (the official
-east-west transport, replacing the earlier HTTP call) and computes a rating summary
-(total + average). If review-service is unavailable the call **soft-fails** and the response
-returns an empty `reviews` list with a zeroed summary.
-
-- Target: `REVIEW_GRPC_ADDR` (default `dns:///review.review.svc.cluster.local:9090`)
-- Per-call deadline: 3s
-- Dialed via `github.com/duynhlab/pkg/grpcx` (`grpcx.Dial`), which installs the otelgrpc client stats handler
-
-## Observability
-
-Built on `github.com/duynhlab/pkg/obsx`:
-
-- **Metrics**: `obsx.SetupMetrics()` bridges OpenTelemetry metrics from the otelgrpc client
-  stats handler into the default Prometheus registry, so gRPC **client** RED metrics
-  (`rpc_client_*`) for the review calls surface on the **existing** `/metrics` endpoint — no
-  separate metrics port. The platform `ServiceMonitor` scrapes the same endpoint that serves
-  HTTP RED metrics (`request_duration_seconds`, `requests_in_flight`, request/response size).
-- **Logging**: structured Zap logs; the logging middleware uses `obsx.TraceIDFromContext` so
-  every log line carries the active span's trace ID for log↔trace correlation (falling back to
-  header-derived/generated IDs only when no span is present).
-- **Tracing**: OpenTelemetry traces exported to the OTel Collector (Tempo).
-- **Profiling**: Pyroscope continuous profiling.
-
-Middleware chain (order matters): **tracing → logging** (metrics come from
-otelgin/otelgrpc and explicit instruments, not a third middleware).
-CORS is terminated at the Kong edge (global `cors` plugin in both local-stack
-and the cluster) — the service carries no CORS middleware.
-
-## Tech Stack
-
-- Go + Gin framework
-- PostgreSQL via pgx/v5 (product-db cluster, HA)
-- PgDog connection pooling
-- Valkey (Redis-compatible) caching via go-redis/v9
-- gRPC client (`pkg/grpcx`) for review aggregation
-- OpenTelemetry tracing, OTel→Prometheus metrics, Pyroscope profiling (`pkg/obsx`)
-
-## Configuration
-
-Config is loaded from environment variables (with `.env` support for local dev) via `config/config.go`.
-
-| Variable | Default | Purpose |
-|----------|---------|---------|
-| `SERVICE_NAME` | _(required)_ | Service name (e.g. `product`) |
-| `PORT` | `8080` | HTTP listen port |
-| `ENV` | `development` | `development`/`staging`/`production` |
-| `REVIEW_GRPC_ADDR` | `dns:///review.review.svc.cluster.local:9090` | review-service gRPC target |
-| `DB_HOST` / `DB_PORT` / `DB_NAME` / `DB_USER` / `DB_PASSWORD` | — / `5432` / — / — / — | PostgreSQL connection |
-| `DB_SSLMODE` | `disable` | PostgreSQL SSL mode |
-| `DB_POOL_MAX_CONNECTIONS` | `25` | pgx pool max connections |
-| `CACHE_ENABLED` | `true` | Toggle Valkey cache |
-| `CACHE_HOST` / `CACHE_PORT` | `valkey.cache-system.svc.cluster.local` / `6379` | Valkey endpoint |
-| `CACHE_TTL_PRODUCT_LIST` | `5m` | Product-list cache TTL |
-| `CACHE_TTL_PRODUCT_DETAIL` | `10m` | Single-product cache TTL |
-| `CACHE_PASSWORD` / `CACHE_DB` | `""` / `0` | Valkey auth (optional) + database index |
-| `GRPC_PORT` | `9090` | gRPC listen port (`ProductService` — checkout price reads) |
-| `TRACING_ENABLED` | `true` | Toggle OTel tracing |
-| `OTEL_COLLECTOR_ENDPOINT` | `otel-collector-opentelemetry-collector.monitoring.svc.cluster.local:4318` | OTLP endpoint |
-| `OTEL_SAMPLE_RATE` | `0.1` | Trace sample rate (0.0–1.0) |
-| `PROFILING_ENABLED` | `true` | Toggle Pyroscope profiling |
-| `PYROSCOPE_ENDPOINT` | `http://pyroscope.monitoring.svc.cluster.local:4040` | Pyroscope endpoint |
-| `METRICS_ENABLED` | `true` | Toggle metrics setup |
-| `LOG_LEVEL` / `LOG_FORMAT` | `info` / `json` | Logging |
-| `SHUTDOWN_TIMEOUT` | `10` (s) | Graceful shutdown timeout |
-| `READINESS_DRAIN_DELAY` | `5` (s, max 30) | Delay after failing readiness before shutdown |
-
-## Development
-
-### Prerequisites
-
-- Go 1.26+
-- [golangci-lint](https://golangci-lint.run/welcome/install/) v2+
-- Docker (only for the integration tests — see [Testing](#testing))
-
-### Local Development
+Standalone you need PostgreSQL through the `DB_*` variables; Valkey is optional
+and the service degrades to database reads without it:
 
 ```bash
-# Install dependencies
-go mod tidy
-go mod download
+go run cmd/main.go migrate   # apply schema migrations
+go run cmd/main.go seed      # demo catalog — development only, refuses production
+go run cmd/main.go           # serve HTTP :8080 + gRPC :9090
+```
 
-# Build
+## Verify
+
+The commands CI runs, so a green local run means a green pipeline:
+
+```bash
 go build ./...
-
-# Unit tests (no Docker needed)
-go test ./...
-
-# Lint (must pass before PR merge)
-golangci-lint run --timeout=10m
-
-# Run locally (requires .env or env vars)
-go run cmd/main.go
+go test -race ./...
+go test -tags=integration ./internal/core/repository/...   # needs Docker (testcontainers)
+golangci-lint run
 ```
 
-### Testing
+## Docs
 
-Unit tests use the stdlib `testing` package with hand-written mocks and table-driven
-subtests (no testify/gomock). The **repository layer** is covered by **integration tests**
-against a real PostgreSQL via [testcontainers](https://golang.testcontainers.org/).
-
-```bash
-# Unit tests (no Docker)
-go test ./...
-
-# With coverage (as CI runs it)
-go test -race -coverprofile=coverage.out ./...
-
-# Integration tests — repository layer, real Postgres (needs a running Docker daemon)
-go test -tags=integration ./internal/core/repository/...
-```
-
-Integration tests are build-tagged `//go:build integration`, so the default `go test ./...`
-skips them and the service binary never links testcontainers. CI runs both jobs and merges
-their coverage into SonarCloud (gate: ≥ 80% on new code).
-
-### Pre-push Checklist
-
-```bash
-go build ./... && \
-  go test ./... && \
-  go test -tags=integration ./internal/core/repository/... && \
-  golangci-lint run --timeout=10m
-```
+- [Canonical contract](https://github.com/duynhlab/homelab/blob/main/docs/api/product.md)
+- [local-stack guide](https://github.com/duynhlab/homelab/blob/main/local-stack/README.md)
 
 ## License
 
