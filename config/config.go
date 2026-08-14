@@ -48,8 +48,15 @@ type Config struct {
 	// From READINESS_DRAIN_DELAY env (default: 5s, max: 30s).
 	ReadinessDrainDelay int
 	ReviewGRPCAddr      string // Review service gRPC target for aggregation - from REVIEW_GRPC_ADDR env
+	// RFC-0023 slice B / ADR-050: the protected catalog routes verify the STAFF
+	// issuer, not the customer realm — a customer token is wrong-issuer here (and
+	// at the edge) before any role logic runs. OIDC_AUDIENCE is shared fleet-wide:
+	// the audience names the platform, the issuer names the population.
+	OIDCStaffIssuer  string // Expected OIDC issuer (iss, exact match) - from OIDC_STAFF_ISSUER env
+	OIDCAudience     string // Expected OIDC audience (aud containment) - from OIDC_AUDIENCE env
+	OIDCStaffJWKSURL string // Optional JWKS endpoint override - from OIDC_STAFF_JWKS_URL env (empty = derived from issuer)
 	// RFC-0021 P2-6: inventory availability enrichment for product details.
-	InventoryGRPCAddr  string // inventory.v1 target - from INVENTORY_GRPC_ADDR env
+	InventoryGRPCAddr string // inventory.v1 target - from INVENTORY_GRPC_ADDR env
 }
 
 // GRPCConfig defines the internal gRPC server (east-west only). gRPC is the
@@ -178,6 +185,9 @@ func Load() *Config {
 		},
 		ShutdownTimeout:     getEnvDurationSeconds("SHUTDOWN_TIMEOUT", 10),
 		ReadinessDrainDelay: getEnvDurationSecondsWithMax("READINESS_DRAIN_DELAY", 5, 30),
+		OIDCStaffIssuer:     getEnv("OIDC_STAFF_ISSUER", "https://id.duynh.me/realms/duynhlab-staff"),
+		OIDCAudience:        getEnv("OIDC_AUDIENCE", "duynhlab-platform"),
+		OIDCStaffJWKSURL:    getEnv("OIDC_STAFF_JWKS_URL", ""),
 		ReviewGRPCAddr:      getEnv("REVIEW_GRPC_ADDR", "dns:///review.review.svc.cluster.local:9090"),
 		InventoryGRPCAddr:   getEnv("INVENTORY_GRPC_ADDR", "dns:///inventory-grpc.inventory.svc.cluster.local:9090"),
 		GRPC: GRPCConfig{

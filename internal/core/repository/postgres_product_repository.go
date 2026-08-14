@@ -25,13 +25,17 @@ func NewPostgresProductRepository(pool *pgxpool.Pool) *PostgresProductRepository
 	return &PostgresProductRepository{pool: pool}
 }
 
-// FindByID retrieves a product by ID
+// FindByID retrieves a product by ID.
+//
+// ACTIVE only (RFC-0023 slice B): a DRAFT product is an operator's unfinished work
+// and an ARCHIVED one has been withdrawn from sale, so both must read as absent
+// here. FindByIDs deliberately does NOT share this filter — see its comment.
 func (r *PostgresProductRepository) FindByID(ctx context.Context, id string) (*domain.Product, error) {
 	query := `
 		SELECT p.id, p.name, p.description, p.price, COALESCE(c.name, 'Uncategorized') as category
 		FROM products p
 		LEFT JOIN categories c ON p.category_id = c.id
-		WHERE p.id = $1
+		WHERE p.id = $1 AND p.status = 'ACTIVE'
 	`
 
 	var product domain.Product
@@ -56,6 +60,15 @@ func (r *PostgresProductRepository) FindByID(ctx context.Context, id string) (*d
 // RFC-0015). Non-numeric and unknown ids are omitted from the result — the
 // caller treats a missing id as "product gone". Reads hit the DB directly
 // (never the cache): this is the price/stock authority at checkout time.
+//
+// STATUS-BLIND ON PURPOSE (RFC-0023 slice B). Every other read here filters
+// ACTIVE; this one must not. A customer whose cart already holds a product the
+// operator archives a second later still needs that line to price correctly, and
+// checkout's own re-validation — not an empty price lookup — is what decides
+// whether the order may proceed. Adding the filter here would turn "archived
+// while in a cart" into a checkout that fails with no explicable reason. The
+// product PAGE 404s (FindByID); the PRICE resolves. That asymmetry is documented
+// in homelab docs/api/product.md.
 func (r *PostgresProductRepository) FindByIDs(ctx context.Context, ids []string) ([]domain.Product, error) {
 	intIDs := make([]int, 0, len(ids))
 	for _, id := range ids {
@@ -100,7 +113,7 @@ func (r *PostgresProductRepository) FindAll(ctx context.Context, filters domain.
 		SELECT p.id, p.name, p.description, p.price, COALESCE(c.name, 'Uncategorized') as category
 		FROM products p
 		LEFT JOIN categories c ON p.category_id = c.id
-		WHERE 1=1
+		WHERE p.status = 'ACTIVE'
 	`
 
 	args := []interface{}{}
@@ -178,7 +191,7 @@ func (r *PostgresProductRepository) Count(ctx context.Context, filters domain.Pr
 		SELECT COUNT(*)
 		FROM products p
 		LEFT JOIN categories c ON p.category_id = c.id
-		WHERE 1=1
+		WHERE p.status = 'ACTIVE'
 	`
 
 	args := []interface{}{}
@@ -210,7 +223,7 @@ func (r *PostgresProductRepository) FindRelatedProducts(ctx context.Context, pro
 		SELECT p2.id, p2.name, p2.price
 		FROM products p1
 		JOIN products p2 ON p1.category_id = p2.category_id
-		WHERE p1.id = $1 AND p2.id != $1
+		WHERE p1.id = $1 AND p2.id != $1 AND p2.status = 'ACTIVE'
 		LIMIT $2
 	`
 
