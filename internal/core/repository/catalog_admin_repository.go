@@ -137,6 +137,12 @@ func (r *CatalogAdminRepository) CreateProduct(ctx context.Context, in CreatePro
 			VALUES ($1, $2, $3, (SELECT id FROM categories WHERE name = $4), 'DRAFT', 1)
 			RETURNING id`,
 			in.Name, in.Description, in.Price, in.Category).Scan(&id); err != nil {
+			// UNIQUE(products.name) is the create path's safety net: a retried
+			// create reads as a conflict the operator can act on instead of a
+			// second row (and instead of an opaque 500).
+			if isUniqueViolation(err) {
+				return fmt.Errorf("a product named %q exists: %w", in.Name, domain.ErrConflict)
+			}
 			return fmt.Errorf("insert product: %w", err)
 		}
 
@@ -214,6 +220,10 @@ func (r *CatalogAdminRepository) UpdateProduct(ctx context.Context, in UpdatePro
 			 WHERE id = $5 AND version = $6`,
 			in.Name, in.Description, in.Price, in.Category, in.ID, in.ExpectedVersion)
 		if err != nil {
+			// Renaming onto an existing name hits the same unique index.
+			if isUniqueViolation(err) {
+				return fmt.Errorf("a product named %q exists: %w", in.Name, domain.ErrConflict)
+			}
 			return fmt.Errorf("update product: %w", err)
 		}
 		if tag.RowsAffected() == 0 {
@@ -503,13 +513,20 @@ func isUniqueViolation(err error) bool {
 // rather than the pool is the enforcement of "same transaction as the write": there
 // is no way to call this outside one.
 func insertAudit(ctx context.Context, tx pgx.Tx, e domain.AuditEntry) error {
-	var changed []byte
+	// A *string, NOT []byte. pgx encodes []byte as bytea, and the service's pool
+	// runs the simple protocol, so the JSONB column received a hex bytea literal
+	// and Postgres answered 22P02 invalid input syntax for type json. A plain
+	// Postgres pool in a test uses the extended protocol and inferred the type,
+	// which is exactly why this only failed against the real service. nil stays
+	// NULL for a command with no field diff.
+	var changed *string
 	if len(e.ChangedFields) > 0 {
 		b, err := json.Marshal(e.ChangedFields)
 		if err != nil {
 			return fmt.Errorf("marshal changed_fields: %w", err)
 		}
-		changed = b
+		s := string(b)
+		changed = &s
 	}
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO admin_action_audit

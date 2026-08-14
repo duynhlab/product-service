@@ -122,6 +122,38 @@ func TestCatalogAdmin_Integration(t *testing.T) {
 		}
 	})
 
+	t.Run("duplicate product name is a conflict, not a second row", func(t *testing.T) {
+		first, err := repo.CreateProduct(ctx, CreateProductInput{
+			Name: "Unique Widget", Price: 4, Category: cat.Name, ActorSub: actor,
+		})
+		if err != nil {
+			t.Fatalf("CreateProduct: %v", err)
+		}
+		if _, err := repo.CreateProduct(ctx, CreateProductInput{
+			Name: "Unique Widget", Price: 4, Category: cat.Name, ActorSub: actor,
+		}); !errors.Is(err, domain.ErrConflict) {
+			t.Fatalf("duplicate create = %v, want ErrConflict", err)
+		}
+		// Renaming another product onto that name is the same conflict.
+		other, err := repo.CreateProduct(ctx, CreateProductInput{
+			Name: "Rename Source Widget", Price: 4, Category: cat.Name, ActorSub: actor,
+		})
+		if err != nil {
+			t.Fatalf("CreateProduct: %v", err)
+		}
+		if _, err := repo.UpdateProduct(ctx, UpdateProductInput{
+			ID: other.ID, Name: "Unique Widget", Price: 4, Category: cat.Name,
+			ExpectedVersion: other.Version, ActorSub: actor,
+		}); !errors.Is(err, domain.ErrConflict) {
+			t.Fatalf("rename onto an existing name = %v, want ErrConflict", err)
+		}
+		// The refused create left exactly one row and one audit entry.
+		audit, err := repo.ListAudit(ctx, "product", atoiT(t, first.ID), 10)
+		if err != nil || len(audit) != 1 {
+			t.Fatalf("audit after refused duplicate = (%d, %v), want 1", len(audit), err)
+		}
+	})
+
 	t.Run("optimistic concurrency: stale version loses", func(t *testing.T) {
 		p, err := repo.CreateProduct(ctx, CreateProductInput{
 			Name: "Concurrency Widget", Price: 20, Category: cat.Name,

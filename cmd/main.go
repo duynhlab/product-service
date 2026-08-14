@@ -335,14 +335,20 @@ func main() {
 	r.GET("/product/v1/public/products", productHandler.ListProducts)
 	r.GET("/product/v1/public/products/:id", productHandler.GetProduct)
 	r.GET("/product/v1/public/products/:id/details", productHandler.GetProductDetails) // Aggregation endpoint
-	// Internal: admin/seed only. Not routed through Kong.
+	// RETIRED (RFC-0023 slice B / ADR-047): POST /product/v1/internal/products is
+	// gone. It was the platform's last unauthenticated write path — no token, no
+	// role, no actor, no audit, fenced by NetworkPolicy alone — and ADR-047's
+	// boundary rule says such routes are REPLACED, not promoted, once a governed
+	// equivalent exists. The protected create below is that equivalent, and it is
+	// strictly better: staff-realm token, backoffice_admin, the actor from the
+	// token, an audit row in the same transaction, and DRAFT instead of straight
+	// into the public catalog.
 	//
-	// RETIREMENT PENDING (RFC-0023 slice B): the protected route below is the
-	// governed replacement — role-gated, actor-attributed, audited, and it lands
-	// in DRAFT instead of straight into the public catalog. This one stays until
-	// the seed path is confirmed to have no caller (db/seed uses SQL), because
-	// deleting a route is cheap and restoring a broken seed at bring-up is not.
-	r.POST("/product/v1/internal/products", productHandler.CreateProduct)
+	// Verified callerless before deleting: db/seed loads SQL
+	// (db/seed/sql/000001_demo_products.up.sql), nothing in the fleet or in
+	// local-stack posts to it, and audit row A8 asserts the edge has no route for
+	// it — that assertion still passes, because "no route at the edge" is now true
+	// of a handler that does not exist either.
 
 	// Protected catalog surface (RFC-0023 slice B, ADR-047/050) — product's first
 	// authenticated routes. The verifier trusts the STAFF realm; the edge does the
