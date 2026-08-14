@@ -137,6 +137,10 @@ func LoggingMiddleware(logger *zap.Logger) gin.HandlerFunc {
 			zap.Duration("duration", duration),
 			zap.String("client_ip", c.ClientIP()),
 			zap.String("user_agent", c.Request.UserAgent()),
+			// Handlers attach the underlying error with c.Error before answering
+			// the opaque envelope; without this field a 500 says only that it
+			// happened, never why.
+			ginErrors(c),
 		)
 	}
 }
@@ -173,4 +177,13 @@ func NewDevelopmentLogger() (*zap.Logger, error) {
 	config := zap.NewDevelopmentConfig()
 	config.EncoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
 	return config.Build()
+}
+
+// ginErrors renders whatever handlers recorded with c.Error, or a no-op field
+// when nothing did — zap.Skip keeps the line unchanged for the healthy path.
+func ginErrors(c *gin.Context) zap.Field {
+	if len(c.Errors) == 0 {
+		return zap.Skip()
+	}
+	return zap.Strings("errors", c.Errors.Errors())
 }

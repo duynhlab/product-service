@@ -96,6 +96,10 @@ func (h *ProtectedHandler) mount(r *gin.Engine, authMW ...gin.HandlerFunc) {
 // respondDomainError maps the domain's error vocabulary onto the shared envelope.
 // Kept in one place so every command answers a conflict the same way.
 func respondDomainError(c *gin.Context, err error) {
+	// Record the real error on the context: the client gets the opaque envelope,
+	// but a 500 with nothing in the log is undiagnosable in production (the
+	// access log picks these up — middleware/logging.go).
+	_ = c.Error(err)
 	switch {
 	case errors.Is(err, domain.ErrNotFound):
 		httpx.RespondError(c, http.StatusNotFound, httpx.CodeNotFound, "Product not found")
@@ -135,6 +139,7 @@ func (h *ProtectedHandler) ListProducts(c *gin.Context) {
 
 	items, total, err := h.repo.ListProducts(c.Request.Context(), status, pageSize, httpx.Offset(page, pageSize))
 	if err != nil {
+		_ = c.Error(err)
 		httpx.RespondError(c, http.StatusInternalServerError, httpx.CodeInternal, msgInternal)
 		return
 	}
@@ -256,6 +261,7 @@ func (h *ProtectedHandler) ProductAudit(c *gin.Context) {
 	}
 	rows, err := h.repo.ListAudit(c.Request.Context(), "product", id, 50)
 	if err != nil {
+		_ = c.Error(err)
 		httpx.RespondError(c, http.StatusInternalServerError, httpx.CodeInternal, msgInternal)
 		return
 	}
@@ -267,6 +273,7 @@ func (h *ProtectedHandler) ListCategories(c *gin.Context) {
 	page, pageSize := httpx.ParsePage(c)
 	items, total, err := h.repo.ListCategories(c.Request.Context(), pageSize, httpx.Offset(page, pageSize))
 	if err != nil {
+		_ = c.Error(err)
 		httpx.RespondError(c, http.StatusInternalServerError, httpx.CodeInternal, msgInternal)
 		return
 	}
