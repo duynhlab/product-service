@@ -57,6 +57,56 @@ func TestCatalogAdmin_Integration(t *testing.T) {
 		}
 	})
 
+	t.Run("operator list spans every state and pages", func(t *testing.T) {
+		// Self-contained: the harness applies migrations only, so this subtest
+		// makes its own ACTIVE row rather than assuming a seeded catalog.
+		active, err := repo.CreateProduct(ctx, CreateProductInput{
+			Name: "Listed Active Widget", Price: 1, Category: cat.Name,
+			ActorSub: actor, RequestID: "req-list-1",
+		})
+		if err != nil {
+			t.Fatalf("CreateProduct: %v", err)
+		}
+		if _, err := repo.Transition(ctx, TransitionInput{
+			ID: active.ID, Action: domain.ActionPublish, ActorSub: actor,
+		}); err != nil {
+			t.Fatalf("publish: %v", err)
+		}
+
+		all, total, err := repo.ListProducts(ctx, "", 200, 0)
+		if err != nil || total < 2 {
+			t.Fatalf("ListProducts = (total %d, %v), want >= 2", total, err)
+		}
+		states := map[string]bool{}
+		for _, p := range all {
+			states[p.Status] = true
+		}
+		// The operator list is the only read that can show both a draft and a
+		// published product at once.
+		if !states["DRAFT"] || !states["ACTIVE"] {
+			t.Fatalf("list must span states, saw %v", states)
+		}
+
+		drafts, draftTotal, err := repo.ListProducts(ctx, "DRAFT", 200, 0)
+		if err != nil || draftTotal < 1 {
+			t.Fatalf("DRAFT filter = (total %d, %v)", draftTotal, err)
+		}
+		for _, p := range drafts {
+			if p.Status != "DRAFT" {
+				t.Fatalf("status filter leaked: %+v", p)
+			}
+		}
+		if draftTotal >= total {
+			t.Fatalf("filtered total %d must be smaller than the unfiltered %d", draftTotal, total)
+		}
+
+		p1, _, _ := repo.ListProducts(ctx, "", 1, 0)
+		p2, _, err := repo.ListProducts(ctx, "", 1, 1)
+		if err != nil || len(p1) != 1 || len(p2) != 1 || p1[0].ID == p2[0].ID {
+			t.Fatalf("paging broken: %v vs %v (%v)", p1, p2, err)
+		}
+	})
+
 	t.Run("draft products stay out of the public read path", func(t *testing.T) {
 		// The public repository is the one the catalog serves from; a DRAFT row
 		// must never appear there even though it exists.

@@ -231,3 +231,11 @@ func (c *ProductCache) SetProductList(ctx context.Context, filters domain.Produc
 func (c *ProductCache) InvalidateProductList(ctx context.Context) error {
 	return c.client.DeleteByPattern(ctx, "product:list:*")
 }
+
+// InvalidateProduct drops one product's cached detail (RFC-0023 slice B).
+// Deleting rather than re-writing is deliberate: an ARCHIVED product must
+// disappear from the public read entirely, and a write-through would keep
+// serving the row the archive was meant to hide.
+func (c *ProductCache) InvalidateProduct(ctx context.Context, id string) error {
+	return c.client.Delete(ctx, c.generateProductKey(id))
+}

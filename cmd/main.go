@@ -21,6 +21,7 @@ import (
 	"go.uber.org/zap/zapcore"
 	"google.golang.org/grpc"
 
+	"github.com/duynhlab/pkg/authmw"
 	"github.com/duynhlab/pkg/grpcx"
 	"github.com/duynhlab/pkg/logger/zapx"
 	"github.com/duynhlab/pkg/migratex"
@@ -335,7 +336,29 @@ func main() {
 	r.GET("/product/v1/public/products/:id", productHandler.GetProduct)
 	r.GET("/product/v1/public/products/:id/details", productHandler.GetProductDetails) // Aggregation endpoint
 	// Internal: admin/seed only. Not routed through Kong.
+	//
+	// RETIREMENT PENDING (RFC-0023 slice B): the protected route below is the
+	// governed replacement — role-gated, actor-attributed, audited, and it lands
+	// in DRAFT instead of straight into the public catalog. This one stays until
+	// the seed path is confirmed to have no caller (db/seed uses SQL), because
+	// deleting a route is cheap and restoring a broken seed at bring-up is not.
 	r.POST("/product/v1/internal/products", productHandler.CreateProduct)
+
+	// Protected catalog surface (RFC-0023 slice B, ADR-047/050) — product's first
+	// authenticated routes. The verifier trusts the STAFF realm; the edge does the
+	// same check coarsely and this one is authoritative.
+	staffVerifier, err := authmw.NewVerifier(authmw.Config{
+		Issuer:   cfg.OIDCStaffIssuer,
+		Audience: cfg.OIDCAudience,
+		JWKSURL:  cfg.OIDCStaffJWKSURL,
+	})
+	if err != nil {
+		logger.Fatal("staff JWKS verifier init failed", zap.Error(err))
+	}
+	v1.RegisterProtectedRoutes(r, v1.NewProtectedHandler(
+		repository.NewCatalogAdminRepository(pool), productCache), staffVerifier)
+	logger.Info("Protected catalog routes registered",
+		zap.String("issuer", cfg.OIDCStaffIssuer))
 
 	// Create HTTP server (ReadHeaderTimeout mitigates Slowloris)
 	srv := &http.Server{
