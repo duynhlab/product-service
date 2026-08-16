@@ -105,7 +105,6 @@ func (s *ProductService) ListProducts(ctx context.Context, filters domain.Produc
 	return products, total, nil
 }
 
-
 // GetProductsByIDs is the batch price/availability read for checkout
 // re-validation (RFC-0015). It deliberately bypasses the cache: product is
 // the price authority at checkout time, so the answer must be the DB's

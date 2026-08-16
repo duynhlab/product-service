@@ -99,10 +99,9 @@ type LoggingConfig struct {
 // CacheConfig defines Valkey/Redis cache configuration
 // Used for caching Product service read-heavy endpoints (GET /products, GET /products/:id)
 type CacheConfig struct {
-	Enabled bool   // Enable caching (default: true) - from CACHE_ENABLED env
-	Host    string // Cache host - from CACHE_HOST env (default: "valkey.cache-system.svc.cluster.local")
-	Port    string // Cache port - from CACHE_PORT env (default: "6379")
-	//nolint:gosec // G117: config field for an injected secret, not a hardcoded credential
+	Enabled          bool          // Enable caching (default: true) - from CACHE_ENABLED env
+	Host             string        // Cache host - from CACHE_HOST env (default: "valkey.cache-system.svc.cluster.local")
+	Port             string        // Cache port - from CACHE_PORT env (default: "6379")
 	Password         string        // Cache password - from CACHE_PASSWORD env (optional, empty for local)
 	DB               int           // Cache database number - from CACHE_DB env (default: 0)
 	TTLProductList   time.Duration // TTL for product list cache - from CACHE_TTL_PRODUCT_LIST env (default: 5m)
@@ -112,11 +111,10 @@ type CacheConfig struct {
 // DatabaseConfig defines PostgreSQL database configuration
 // All database connections use separate environment variables (not DATABASE_URL string)
 type DatabaseConfig struct {
-	Host string // Database host - from DB_HOST env
-	Port string // Database port - from DB_PORT env (default: "5432")
-	Name string // Database name - from DB_NAME env
-	User string // Database user - from DB_USER env
-	//nolint:gosec // G117: config field for an injected secret, not a hardcoded credential
+	Host           string // Database host - from DB_HOST env
+	Port           string // Database port - from DB_PORT env (default: "5432")
+	Name           string // Database name - from DB_NAME env
+	User           string // Database user - from DB_USER env
 	Password       string // Database password - from DB_PASSWORD env
 	SSLMode        string // SSL mode - from DB_SSLMODE env (default: "disable")
 	MaxConnections int    // Max connections - from DB_POOL_MAX_CONNECTIONS env (default: 25)
