@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/duynhlab/pkg/obsx"
 	reviewv1 "github.com/duynhlab/pkg/proto/review/v1"
 	logicv1 "github.com/duynhlab/product-service/internal/logic/v1"
-	"github.com/duynhlab/product-service/middleware"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
@@ -26,7 +26,7 @@ func NewReviewClient(conn *grpc.ClientConn) *ReviewClient {
 
 // GetProductReviews fetches reviews for a product from the review service.
 func (c *ReviewClient) GetProductReviews(ctx context.Context, productID string, logger *zap.Logger) ([]logicv1.Review, error) {
-	ctx, span := middleware.StartSpan(ctx, "review_client.get_product_reviews", trace.WithAttributes(
+	ctx, span := obsx.StartSpan(ctx, tracerScope, "review_client.get_product_reviews", trace.WithAttributes(
 		attribute.String("layer", "web"),
 		attribute.String("product.id", productID),
 		attribute.String("downstream.service", "review"),

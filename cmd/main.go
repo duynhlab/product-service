@@ -23,6 +23,7 @@ import (
 
 	"github.com/duynhlab/pkg/authmw"
 	"github.com/duynhlab/pkg/grpcx"
+	"github.com/duynhlab/pkg/httpmw"
 	"github.com/duynhlab/pkg/logger/zapx"
 	"github.com/duynhlab/pkg/migratex"
 	"github.com/duynhlab/pkg/obsx"
@@ -36,7 +37,6 @@ import (
 	grpcv1 "github.com/duynhlab/product-service/internal/grpc/v1"
 	logicv1 "github.com/duynhlab/product-service/internal/logic/v1"
 	v1 "github.com/duynhlab/product-service/internal/web/v1"
-	"github.com/duynhlab/product-service/middleware"
 )
 
 // startGRPC starts the internal gRPC server on cfg.GRPC.Port, serving
@@ -172,7 +172,6 @@ func main() {
 	// The config is built once so the tracer scope name and the startup log
 	// reflect the values obsx actually uses.
 	otelCfg := obsx.ConfigFromEnv()
-	middleware.SetServiceName(otelCfg.ServiceName)
 	var tp interface{ Shutdown(context.Context) error }
 	obs, err := obsx.SetupObservability(context.Background(), otelCfg)
 	if err != nil {
@@ -311,10 +310,10 @@ func main() {
 	// same as the other services — no service-level CORS middleware.
 
 	// Tracing middleware (must be first for context propagation)
-	r.Use(middleware.TracingMiddleware())
+	r.Use(httpmw.Tracing(otelCfg.ServiceName))
 
 	// Logging middleware
-	r.Use(middleware.LoggingMiddleware(logger))
+	r.Use(httpmw.Logging(logger))
 
 	// Health check
 	r.GET("/health", func(c *gin.Context) {

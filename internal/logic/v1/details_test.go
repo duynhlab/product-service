@@ -134,10 +134,6 @@ func (s *stubProductRepo) Count(_ context.Context, _ domain.ProductFilters) (int
 }
 
 func TestGetProductDetails(t *testing.T) {
-	// Not parallel: GetProductDetails calls middleware.StartSpan, whose
-	// GetTracer lazily initialises an unsynchronised package-level tracer.
-	// Concurrent first-calls race on that global, so these cases run serially.
-
 	product := &domain.Product{ID: "p1", Name: "Widget"}
 	related := []domain.Product{{ID: "p2"}, {ID: "p3"}}
 	reviews := []Review{{ID: "r1", Rating: 4}, {ID: "r2", Rating: 2}}

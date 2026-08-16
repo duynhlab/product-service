@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/duynhlab/pkg/obsx"
 	inventoryv1 "github.com/duynhlab/pkg/proto/inventory/v1"
 	logicv1 "github.com/duynhlab/product-service/internal/logic/v1"
-	"github.com/duynhlab/product-service/middleware"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
@@ -30,7 +30,7 @@ func NewInventoryClient(conn *grpc.ClientConn) *InventoryClient {
 // doesn't track (absent from the response) reports unknown rather than erroring
 // — that is a data state, not a transport failure.
 func (c *InventoryClient) GetAvailability(ctx context.Context, skuID string, logger *zap.Logger) (logicv1.Availability, error) {
-	ctx, span := middleware.StartSpan(ctx, "inventory_client.get_availability", trace.WithAttributes(
+	ctx, span := obsx.StartSpan(ctx, tracerScope, "inventory_client.get_availability", trace.WithAttributes(
 		attribute.String("layer", "web"),
 		attribute.String("product.id", skuID),
 		attribute.String("downstream.service", "inventory"),
