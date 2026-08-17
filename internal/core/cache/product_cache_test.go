@@ -153,7 +153,9 @@ func TestGetProductOrSet_CacheHit(t *testing.T) {
 	// Pre-populate cache
 	product := &domain.Product{ID: productID, Name: "Cached Product"}
 	data, _ := json.Marshal(product)
-	mockClient.Set(ctx, "product:"+productID, data, 0)
+	if err := mockClient.Set(ctx, "product:"+productID, data, 0); err != nil {
+		t.Fatalf("pre-populating the cache failed: %v", err)
+	}
 
 	// Fetch
 	dbFetchCalls := 0

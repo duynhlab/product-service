@@ -55,7 +55,6 @@ func (r *PostgresProductRepository) FindByID(ctx context.Context, id string) (*d
 	return &product, nil
 }
 
-
 // FindByIDs retrieves a batch of products by id (checkout re-validation,
 // RFC-0015). Non-numeric and unknown ids are omitted from the result — the
 // caller treats a missing id as "product gone". Reads hit the DB directly

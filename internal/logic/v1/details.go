@@ -3,8 +3,8 @@ package v1
 import (
 	"context"
 
+	"github.com/duynhlab/pkg/obsx"
 	"github.com/duynhlab/product-service/internal/core/domain"
-	"github.com/duynhlab/product-service/middleware"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
@@ -69,7 +69,7 @@ type ProductDetails struct {
 // summary. Reviews are soft-fail: on fetch error (or no review client wired)
 // it returns an empty list and a zero summary.
 func (s *ProductService) GetProductDetails(ctx context.Context, id string, logger *zap.Logger) (*ProductDetails, error) {
-	ctx, span := middleware.StartSpan(ctx, "product.details", trace.WithAttributes(
+	ctx, span := obsx.StartSpan(ctx, tracerScope, "product.details", trace.WithAttributes(
 		attribute.String("layer", "logic"),
 		attribute.String("product.id", id),
 	))

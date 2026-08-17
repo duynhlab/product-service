@@ -299,7 +299,7 @@ func TestCreateProduct(t *testing.T) {
 			svc := NewProductService(tt.repo, nil, nil)
 			got, err := svc.CreateProduct(context.Background(), tt.req)
 
-			if tt.wantErr == ErrInvalidPrice {
+			if errors.Is(tt.wantErr, ErrInvalidPrice) {
 				if !errors.Is(err, ErrInvalidPrice) {
 					t.Fatalf("CreateProduct() error = %v, want ErrInvalidPrice", err)
 				}

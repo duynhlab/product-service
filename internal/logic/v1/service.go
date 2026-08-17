@@ -4,12 +4,18 @@ import (
 	"context"
 	"errors"
 
+	"github.com/duynhlab/pkg/obsx"
 	"github.com/duynhlab/product-service/internal/core/cache"
 	"github.com/duynhlab/product-service/internal/core/domain"
-	"github.com/duynhlab/product-service/middleware"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 )
+
+// tracerScope is the OpenTelemetry instrumentation scope for this package's
+// spans: it names the CODE that creates them, which is why it is a package path
+// and not the service name. Deployment identity travels separately as
+// service.name on the Resource.
+const tracerScope = "github.com/duynhlab/product-service/internal/logic/v1"
 
 // DefaultRelatedProductsLimit is the default number of related products to return.
 const DefaultRelatedProductsLimit = 4
@@ -44,7 +50,7 @@ func (s *ProductService) WithAvailability(f AvailabilityFetcher) *ProductService
 // ListProducts retrieves all products with optional filtering
 // Implements Cache-Aside pattern: check cache first, fallback to repository
 func (s *ProductService) ListProducts(ctx context.Context, filters domain.ProductFilters) ([]domain.Product, int, error) {
-	ctx, span := middleware.StartSpan(ctx, "product.list", trace.WithAttributes(
+	ctx, span := obsx.StartSpan(ctx, tracerScope, "product.list", trace.WithAttributes(
 		attribute.String("layer", "logic"),
 	))
 	defer span.End()
@@ -99,13 +105,12 @@ func (s *ProductService) ListProducts(ctx context.Context, filters domain.Produc
 	return products, total, nil
 }
 
-
 // GetProductsByIDs is the batch price/availability read for checkout
 // re-validation (RFC-0015). It deliberately bypasses the cache: product is
 // the price authority at checkout time, so the answer must be the DB's
 // current row, not a possibly-stale cached copy. Unknown ids are omitted.
 func (s *ProductService) GetProductsByIDs(ctx context.Context, ids []string) ([]domain.Product, error) {
-	ctx, span := middleware.StartSpan(ctx, "product.get_batch", trace.WithAttributes(
+	ctx, span := obsx.StartSpan(ctx, tracerScope, "product.get_batch", trace.WithAttributes(
 		attribute.String("layer", "logic"),
 		attribute.Int("products.requested", len(ids)),
 	))
@@ -123,7 +128,7 @@ func (s *ProductService) GetProductsByIDs(ctx context.Context, ids []string) ([]
 // GetProduct retrieves a single product by ID
 // Implements Cache-Aside pattern: check cache first, fallback to repository
 func (s *ProductService) GetProduct(ctx context.Context, id string) (*domain.Product, error) {
-	ctx, span := middleware.StartSpan(ctx, "product.get", trace.WithAttributes(
+	ctx, span := obsx.StartSpan(ctx, tracerScope, "product.get", trace.WithAttributes(
 		attribute.String("layer", "logic"),
 		attribute.String("product.id", id),
 	))
@@ -174,7 +179,7 @@ func (s *ProductService) GetProduct(ctx context.Context, id string) (*domain.Pro
 
 // GetRelatedProducts retrieves related products for a given product
 func (s *ProductService) GetRelatedProducts(ctx context.Context, productID string, limit int) ([]domain.Product, error) {
-	ctx, span := middleware.StartSpan(ctx, "product.related", trace.WithAttributes(
+	ctx, span := obsx.StartSpan(ctx, tracerScope, "product.related", trace.WithAttributes(
 		attribute.String("layer", "logic"),
 		attribute.String("product.id", productID),
 	))
@@ -192,7 +197,7 @@ func (s *ProductService) GetRelatedProducts(ctx context.Context, productID strin
 
 // CreateProduct creates a new product
 func (s *ProductService) CreateProduct(ctx context.Context, req domain.CreateProductRequest) (*domain.Product, error) {
-	ctx, span := middleware.StartSpan(ctx, "product.create", trace.WithAttributes(
+	ctx, span := obsx.StartSpan(ctx, tracerScope, "product.create", trace.WithAttributes(
 		attribute.String("layer", "logic"),
 		attribute.String("product.name", req.Name),
 	))

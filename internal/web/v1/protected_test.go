@@ -21,7 +21,6 @@ type fakeCatalog struct {
 	products []repository.AdminProduct
 	total    int
 	product  *repository.AdminProduct
-	category *domain.Category
 	audit    []repository.AuditRow
 	err      error
 

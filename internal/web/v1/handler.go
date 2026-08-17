@@ -6,15 +6,21 @@ import (
 
 	"strconv"
 
+	"github.com/duynhlab/pkg/httpmw"
 	"github.com/duynhlab/pkg/httpx"
 	"github.com/duynhlab/product-service/internal/core/domain"
 	logicv1 "github.com/duynhlab/product-service/internal/logic/v1"
-	"github.com/duynhlab/product-service/middleware"
 	"github.com/gin-gonic/gin"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 )
+
+// tracerScope is the OpenTelemetry instrumentation scope for this package's
+// spans: it names the CODE that creates them, which is why it is a package path
+// and not the service name. Deployment identity travels separately as
+// service.name on the Resource.
+const tracerScope = "github.com/duynhlab/product-service/internal/web/v1"
 
 // ProductHandler handles HTTP requests for products
 type ProductHandler struct {
@@ -32,7 +38,7 @@ func (h *ProductHandler) ListProducts(c *gin.Context) {
 	ctx := c.Request.Context()
 	span := trace.SpanFromContext(ctx)
 
-	zapLogger := middleware.GetLoggerFromGinContext(c)
+	zapLogger := httpmw.LoggerFrom(c)
 
 	// Get query parameters for filtering
 	filters := domain.ProductFilters{
@@ -81,7 +87,7 @@ func (h *ProductHandler) GetProduct(c *gin.Context) {
 	ctx := c.Request.Context()
 	span := trace.SpanFromContext(ctx)
 
-	zapLogger := middleware.GetLoggerFromGinContext(c)
+	zapLogger := httpmw.LoggerFrom(c)
 	id := c.Param("id")
 	span.SetAttributes(attribute.String("product.id", id))
 
@@ -107,7 +113,7 @@ func (h *ProductHandler) CreateProduct(c *gin.Context) {
 	ctx := c.Request.Context()
 	span := trace.SpanFromContext(ctx)
 
-	zapLogger := middleware.GetLoggerFromGinContext(c)
+	zapLogger := httpmw.LoggerFrom(c)
 
 	var req domain.CreateProductRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -144,7 +150,7 @@ func (h *ProductHandler) GetProductDetails(c *gin.Context) {
 	ctx := c.Request.Context()
 	span := trace.SpanFromContext(ctx)
 
-	zapLogger := middleware.GetLoggerFromGinContext(c)
+	zapLogger := httpmw.LoggerFrom(c)
 	id := c.Param("id")
 	span.SetAttributes(attribute.String("product.id", id))
 

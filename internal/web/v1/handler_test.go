@@ -95,7 +95,7 @@ func TestListProducts_Success(t *testing.T) {
 		t.Fatalf("status = %d, want 200", rec.Code)
 	}
 	body := decode(t, rec)
-	if body["total_items"].(float64) != 2 {
+	if total, ok := body["total_items"].(float64); !ok || total != 2 {
 		t.Errorf("total_items = %v, want 2", body["total_items"])
 	}
 	if items, ok := body["items"].([]any); !ok || len(items) != 2 {
@@ -114,10 +114,10 @@ func TestListProducts_DefaultPaging(t *testing.T) {
 		t.Fatalf("status = %d, want 200", rec.Code)
 	}
 	body := decode(t, rec)
-	if body["page"].(float64) != 1 {
+	if page, ok := body["page"].(float64); !ok || page != 1 {
 		t.Errorf("page = %v, want 1", body["page"])
 	}
-	if body["page_size"].(float64) != 20 {
+	if size, ok := body["page_size"].(float64); !ok || size != 20 {
 		t.Errorf("page_size = %v, want 20", body["page_size"])
 	}
 }

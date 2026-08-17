@@ -8,10 +8,10 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/duynhlab/product-service/internal/core/domain"
-	"github.com/duynhlab/product-service/internal/core/repository"
 	"github.com/duynhlab/pkg/authmw"
 	"github.com/duynhlab/pkg/httpx"
+	"github.com/duynhlab/product-service/internal/core/domain"
+	"github.com/duynhlab/product-service/internal/core/repository"
 )
 
 // The protected catalog surface (RFC-0023 slice B, ADR-047/050). Product's first
