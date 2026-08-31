@@ -43,7 +43,9 @@ jobs:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
   notify:
-    if: always()
+    # Dependabot PRs run without repo secrets, so the Slack call can only
+    # fail there — skip instead of painting every deps PR red.
+    if: always() && github.actor != 'dependabot[bot]'
     needs: [pr-checks, go-check, gitleaks, sonar]
     uses: duynhlab/gha-workflows/.github/workflows/status.yml@e321897e5c28e7c861b9d8beb37614e1c5823f42 # main
     with:
