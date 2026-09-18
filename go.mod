@@ -14,7 +14,7 @@ require (
 	github.com/duynhlab/pkg/obsx v0.39.2
 	github.com/duynhlab/pkg/proto v0.37.1
 	github.com/gin-gonic/gin v1.12.0
-	github.com/jackc/pgx/v5 v5.10.0
+	github.com/jackc/pgx/v5 v5.11.0
 	github.com/joho/godotenv v1.5.1
 	github.com/redis/go-redis/extra/redisotel/v9 v9.21.0
 	github.com/redis/go-redis/v9 v9.21.0
