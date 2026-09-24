@@ -7,7 +7,6 @@ import (
 
 	inventoryv1 "github.com/duynhlab/pkg/proto/inventory/v1"
 	logicv1 "github.com/duynhlab/product-service/internal/logic/v1"
-	"go.uber.org/zap"
 	"google.golang.org/grpc"
 )
 
@@ -40,7 +39,7 @@ func TestInventoryClient_GetAvailability(t *testing.T) {
 		}}
 		c := &InventoryClient{client: stub}
 
-		got, err := c.GetAvailability(context.Background(), "15", zap.NewNop())
+		got, err := c.GetAvailability(context.Background(), "15")
 		if err != nil {
 			t.Fatalf("GetAvailability err = %v", err)
 		}
@@ -56,7 +55,7 @@ func TestInventoryClient_GetAvailability(t *testing.T) {
 		stub := &stubInvSvcClient{resp: &inventoryv1.BatchGetAvailabilityResponse{}} // empty
 		c := &InventoryClient{client: stub}
 
-		got, err := c.GetAvailability(context.Background(), "nope", zap.NewNop())
+		got, err := c.GetAvailability(context.Background(), "nope")
 		if err != nil {
 			t.Fatalf("untracked sku must not error: %v", err)
 		}
@@ -67,7 +66,7 @@ func TestInventoryClient_GetAvailability(t *testing.T) {
 
 	t.Run("transport error propagates", func(t *testing.T) {
 		c := &InventoryClient{client: &stubInvSvcClient{err: errors.New("timeout")}}
-		if _, err := c.GetAvailability(context.Background(), "15", zap.NewNop()); err == nil {
+		if _, err := c.GetAvailability(context.Background(), "15"); err == nil {
 			t.Fatal("transport error must propagate")
 		}
 	})

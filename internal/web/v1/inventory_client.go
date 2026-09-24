@@ -3,14 +3,15 @@ package v1
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
+	"github.com/duynhlab/pkg/logger/slogx"
 	"github.com/duynhlab/pkg/obsx"
 	inventoryv1 "github.com/duynhlab/pkg/proto/inventory/v1"
 	logicv1 "github.com/duynhlab/product-service/internal/logic/v1"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
-	"go.uber.org/zap"
 	"google.golang.org/grpc"
 )
 
@@ -29,7 +30,7 @@ func NewInventoryClient(conn *grpc.ClientConn) *InventoryClient {
 // GetAvailability returns inventory's availability for one SKU. A SKU inventory
 // doesn't track (absent from the response) reports unknown rather than erroring
 // — that is a data state, not a transport failure.
-func (c *InventoryClient) GetAvailability(ctx context.Context, skuID string, logger *zap.Logger) (logicv1.Availability, error) {
+func (c *InventoryClient) GetAvailability(ctx context.Context, skuID string) (logicv1.Availability, error) {
 	ctx, span := obsx.StartSpan(ctx, tracerScope, "inventory_client.get_availability", trace.WithAttributes(
 		attribute.String("layer", "web"),
 		attribute.String("product.id", skuID),
@@ -46,7 +47,7 @@ func (c *InventoryClient) GetAvailability(ctx context.Context, skuID string, log
 	if err != nil {
 		span.RecordError(err)
 		span.SetAttributes(attribute.Bool("inventory_service.available", false))
-		logger.Error("Failed to call inventory service", zap.Error(err), zap.String("product_id", skuID))
+		slogx.FromContext(ctx).Error(ctx, "Failed to call inventory service", slogx.Err(err), slog.String("product.id", skuID))
 		return logicv1.Availability{}, fmt.Errorf("call inventory service: %w", err)
 	}
 	span.SetAttributes(attribute.Bool("inventory_service.available", true))

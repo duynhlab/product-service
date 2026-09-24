@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	reviewv1 "github.com/duynhlab/pkg/proto/review/v1"
-	"go.uber.org/zap"
 	"google.golang.org/grpc"
 )
 
@@ -37,7 +36,7 @@ func TestReviewClient_GetProductReviews(t *testing.T) {
 		}}}
 		c := &ReviewClient{client: stub}
 
-		got, err := c.GetProductReviews(context.Background(), "15", zap.NewNop())
+		got, err := c.GetProductReviews(context.Background(), "15")
 		if err != nil {
 			t.Fatalf("GetProductReviews err = %v", err)
 		}
@@ -60,7 +59,7 @@ func TestReviewClient_GetProductReviews(t *testing.T) {
 
 	t.Run("gRPC error is wrapped", func(t *testing.T) {
 		c := &ReviewClient{client: &stubReviewSvcClient{err: errors.New("boom")}}
-		if _, err := c.GetProductReviews(context.Background(), "15", zap.NewNop()); err == nil {
+		if _, err := c.GetProductReviews(context.Background(), "15"); err == nil {
 			t.Fatal("want an error")
 		}
 	})

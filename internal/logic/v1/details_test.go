@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/duynhlab/product-service/internal/core/domain"
-	"go.uber.org/zap"
 )
 
 func TestComputeReviewsSummary(t *testing.T) {
@@ -83,7 +82,7 @@ type stubReviewFetcher struct {
 	err     error
 }
 
-func (s *stubReviewFetcher) GetProductReviews(_ context.Context, _ string, _ *zap.Logger) ([]Review, error) {
+func (s *stubReviewFetcher) GetProductReviews(_ context.Context, _ string) ([]Review, error) {
 	return s.reviews, s.err
 }
 
@@ -196,7 +195,7 @@ func TestGetProductDetails(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Cache disabled (nil) so GetProduct/GetRelatedProducts hit the repo directly.
 			svc := NewProductService(tt.repo, nil, tt.fetcher)
-			details, err := svc.GetProductDetails(context.Background(), "p1", zap.NewNop())
+			details, err := svc.GetProductDetails(context.Background(), "p1")
 
 			if tt.wantErr {
 				if err == nil {
@@ -234,7 +233,7 @@ type stubAvailabilityFetcher struct {
 	calls int
 }
 
-func (s *stubAvailabilityFetcher) GetAvailability(_ context.Context, _ string, _ *zap.Logger) (Availability, error) {
+func (s *stubAvailabilityFetcher) GetAvailability(_ context.Context, _ string) (Availability, error) {
 	s.calls++
 	return s.avail, s.err
 }
@@ -248,7 +247,7 @@ func TestGetProductDetails_AvailabilityEnrichment(t *testing.T) {
 
 	t.Run("disabled (nil fetcher) omits availability", func(t *testing.T) {
 		svc := NewProductService(base(), nil, nil)
-		d, err := svc.GetProductDetails(context.Background(), "p1", zap.NewNop())
+		d, err := svc.GetProductDetails(context.Background(), "p1")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -260,7 +259,7 @@ func TestGetProductDetails_AvailabilityEnrichment(t *testing.T) {
 	t.Run("success sets inventory availability", func(t *testing.T) {
 		f := &stubAvailabilityFetcher{avail: Availability{Status: "in_stock", AvailableToPromise: 7}}
 		svc := NewProductService(base(), nil, nil).WithAvailability(f)
-		d, err := svc.GetProductDetails(context.Background(), "p1", zap.NewNop())
+		d, err := svc.GetProductDetails(context.Background(), "p1")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -272,7 +271,7 @@ func TestGetProductDetails_AvailabilityEnrichment(t *testing.T) {
 	t.Run("fetch error soft-fails to unknown, page still returns", func(t *testing.T) {
 		f := &stubAvailabilityFetcher{err: errors.New("inventory down")}
 		svc := NewProductService(base(), nil, nil).WithAvailability(f)
-		d, err := svc.GetProductDetails(context.Background(), "p1", zap.NewNop())
+		d, err := svc.GetProductDetails(context.Background(), "p1")
 		if err != nil {
 			t.Fatalf("soft-fail must not error the page: %v", err)
 		}
@@ -286,7 +285,7 @@ func TestGetProductDetails_AvailabilityEnrichment(t *testing.T) {
 		// enrichment (the review error-return is after enrichAvailability).
 		f := &stubAvailabilityFetcher{avail: Availability{Status: "in_stock", AvailableToPromise: 3}}
 		svc := NewProductService(base(), nil, &stubReviewFetcher{err: errors.New("reviews down")}).WithAvailability(f)
-		d, err := svc.GetProductDetails(context.Background(), "p1", zap.NewNop())
+		d, err := svc.GetProductDetails(context.Background(), "p1")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
