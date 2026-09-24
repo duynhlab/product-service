@@ -111,7 +111,7 @@ func (h *ProductHandler) CreateProduct(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil {
 		span.SetAttributes(attribute.Bool("request.valid", false))
 		span.RecordError(err)
-		slogx.FromContext(ctx).Error(ctx, "Invalid request", slogx.Err(err))
+		slogx.FromContext(ctx).Warn(ctx, "Invalid request", slogx.Err(err))
 		httpx.RespondError(c, http.StatusBadRequest, httpx.CodeValidation, err.Error())
 		return
 	}
