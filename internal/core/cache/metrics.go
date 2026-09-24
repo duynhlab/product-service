@@ -17,7 +17,8 @@ var (
 	cacheMeter = otel.Meter("product-service")
 
 	cacheGets, _ = cacheMeter.Int64Counter("product.cache.gets",
-		metric.WithDescription("Product cache Get outcomes (hit/miss/error)"))
+		metric.WithDescription("Product cache Get outcomes (hit/miss/error)"),
+		metric.WithUnit("{get}"))
 )
 
 // Cache Get outcomes (bounded).
