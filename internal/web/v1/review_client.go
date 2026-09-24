@@ -3,14 +3,15 @@ package v1
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
+	"github.com/duynhlab/pkg/logger/slogx"
 	"github.com/duynhlab/pkg/obsx"
 	reviewv1 "github.com/duynhlab/pkg/proto/review/v1"
 	logicv1 "github.com/duynhlab/product-service/internal/logic/v1"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
-	"go.uber.org/zap"
 	"google.golang.org/grpc"
 )
 
@@ -25,7 +26,7 @@ func NewReviewClient(conn *grpc.ClientConn) *ReviewClient {
 }
 
 // GetProductReviews fetches reviews for a product from the review service.
-func (c *ReviewClient) GetProductReviews(ctx context.Context, productID string, logger *zap.Logger) ([]logicv1.Review, error) {
+func (c *ReviewClient) GetProductReviews(ctx context.Context, productID string) ([]logicv1.Review, error) {
 	ctx, span := obsx.StartSpan(ctx, tracerScope, "review_client.get_product_reviews", trace.WithAttributes(
 		attribute.String("layer", "web"),
 		attribute.String("product.id", productID),
@@ -42,7 +43,7 @@ func (c *ReviewClient) GetProductReviews(ctx context.Context, productID string, 
 	if err != nil {
 		span.RecordError(err)
 		span.SetAttributes(attribute.Bool("review_service.available", false))
-		logger.Error("Failed to call review service", zap.Error(err), zap.String("product_id", productID))
+		slogx.FromContext(ctx).Error(ctx, "Failed to call review service", slogx.Err(err), slog.String("product.id", productID))
 		return nil, fmt.Errorf("call review service: %w", err)
 	}
 
@@ -55,9 +56,9 @@ func (c *ReviewClient) GetProductReviews(ctx context.Context, productID string, 
 	}
 
 	span.SetAttributes(attribute.Int("reviews.count", len(reviews)))
-	logger.Debug("Fetched reviews from review service",
-		zap.String("product_id", productID),
-		zap.Int("count", len(reviews)),
+	slogx.FromContext(ctx).Debug(ctx, "Fetched reviews from review service",
+		slog.String("product.id", productID),
+		slog.Int("count", len(reviews)),
 	)
 
 	return reviews, nil

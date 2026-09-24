@@ -2,18 +2,18 @@ package v1
 
 import (
 	"errors"
+	"log/slog"
 	"net/http"
 
 	"strconv"
 
-	"github.com/duynhlab/pkg/httpmw"
 	"github.com/duynhlab/pkg/httpx"
+	"github.com/duynhlab/pkg/logger/slogx"
 	"github.com/duynhlab/product-service/internal/core/domain"
 	logicv1 "github.com/duynhlab/product-service/internal/logic/v1"
 	"github.com/gin-gonic/gin"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
-	"go.uber.org/zap"
 )
 
 // tracerScope is the OpenTelemetry instrumentation scope for this package's
@@ -37,9 +37,6 @@ func NewProductHandler(service *logicv1.ProductService) *ProductHandler {
 func (h *ProductHandler) ListProducts(c *gin.Context) {
 	ctx := c.Request.Context()
 	span := trace.SpanFromContext(ctx)
-
-	zapLogger := httpmw.LoggerFrom(c)
-
 	// Get query parameters for filtering
 	filters := domain.ProductFilters{
 		Category: c.Query("category"),
@@ -63,7 +60,7 @@ func (h *ProductHandler) ListProducts(c *gin.Context) {
 	products, total, err := h.productService.ListProducts(ctx, filters)
 	if err != nil {
 		span.RecordError(err)
-		zapLogger.Error("Failed to list products", zap.Error(err))
+		slogx.FromContext(ctx).Error(ctx, "Failed to list products", slogx.Err(err))
 		httpx.RespondError(c, http.StatusInternalServerError, httpx.CodeInternal, "Internal server error")
 		return
 	}
@@ -79,22 +76,20 @@ func (h *ProductHandler) ListProducts(c *gin.Context) {
 		pageSize = 20
 	}
 
-	zapLogger.Info("Products listed", zap.Int("count", len(products)), zap.Int("total", total))
+	slogx.FromContext(ctx).Info(ctx, "Products listed", slog.Int("count", len(products)), slog.Int("total", total))
 	c.JSON(http.StatusOK, httpx.NewPaginated(products, page, pageSize, total))
 }
 
 func (h *ProductHandler) GetProduct(c *gin.Context) {
 	ctx := c.Request.Context()
 	span := trace.SpanFromContext(ctx)
-
-	zapLogger := httpmw.LoggerFrom(c)
 	id := c.Param("id")
 	span.SetAttributes(attribute.String("product.id", id))
 
 	product, err := h.productService.GetProduct(ctx, id)
 	if err != nil {
 		span.RecordError(err)
-		zapLogger.Error("Failed to get product", zap.Error(err))
+		slogx.FromContext(ctx).Error(ctx, "Failed to get product", slogx.Err(err))
 
 		switch {
 		case errors.Is(err, logicv1.ErrProductNotFound):
@@ -105,21 +100,18 @@ func (h *ProductHandler) GetProduct(c *gin.Context) {
 		return
 	}
 
-	zapLogger.Info("Product retrieved", zap.String("product_id", id))
+	slogx.FromContext(ctx).Info(ctx, "Product retrieved", slog.String("product.id", id))
 	c.JSON(http.StatusOK, product)
 }
 
 func (h *ProductHandler) CreateProduct(c *gin.Context) {
 	ctx := c.Request.Context()
 	span := trace.SpanFromContext(ctx)
-
-	zapLogger := httpmw.LoggerFrom(c)
-
 	var req domain.CreateProductRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		span.SetAttributes(attribute.Bool("request.valid", false))
 		span.RecordError(err)
-		zapLogger.Error("Invalid request", zap.Error(err))
+		slogx.FromContext(ctx).Warn(ctx, "Invalid request", slogx.Err(err))
 		httpx.RespondError(c, http.StatusBadRequest, httpx.CodeValidation, err.Error())
 		return
 	}
@@ -128,7 +120,7 @@ func (h *ProductHandler) CreateProduct(c *gin.Context) {
 	product, err := h.productService.CreateProduct(ctx, req)
 	if err != nil {
 		span.RecordError(err)
-		zapLogger.Error("Failed to create product", zap.Error(err))
+		slogx.FromContext(ctx).Error(ctx, "Failed to create product", slogx.Err(err))
 
 		switch {
 		case errors.Is(err, logicv1.ErrInvalidPrice):
@@ -141,7 +133,7 @@ func (h *ProductHandler) CreateProduct(c *gin.Context) {
 		return
 	}
 
-	zapLogger.Info("Product created", zap.String("product_id", product.ID))
+	slogx.FromContext(ctx).Info(ctx, "Product created", slog.String("product.id", product.ID))
 	c.JSON(http.StatusCreated, product)
 }
 
@@ -149,15 +141,13 @@ func (h *ProductHandler) CreateProduct(c *gin.Context) {
 func (h *ProductHandler) GetProductDetails(c *gin.Context) {
 	ctx := c.Request.Context()
 	span := trace.SpanFromContext(ctx)
-
-	zapLogger := httpmw.LoggerFrom(c)
 	id := c.Param("id")
 	span.SetAttributes(attribute.String("product.id", id))
 
-	details, err := h.productService.GetProductDetails(ctx, id, zapLogger)
+	details, err := h.productService.GetProductDetails(ctx, id)
 	if err != nil {
 		span.RecordError(err)
-		zapLogger.Error("Failed to get product details", zap.Error(err))
+		slogx.FromContext(ctx).Error(ctx, "Failed to get product details", slogx.Err(err))
 
 		switch {
 		case errors.Is(err, logicv1.ErrProductNotFound):
@@ -189,6 +179,6 @@ func (h *ProductHandler) GetProductDetails(c *gin.Context) {
 		response["availability"] = details.Availability
 	}
 
-	zapLogger.Info("Product details retrieved", zap.String("product_id", id))
+	slogx.FromContext(ctx).Info(ctx, "Product details retrieved", slog.String("product.id", id))
 	c.JSON(http.StatusOK, response)
 }
