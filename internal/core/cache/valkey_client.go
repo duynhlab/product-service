@@ -43,8 +43,16 @@ func NewValkeyCacheClient(addr string, password string, db int) (*ValkeyCacheCli
 // a child span (joining the caller's trace) plus go-redis client metrics.
 // Best-effort: a telemetry-instrumentation failure is reported via the OTel
 // error handler and never disables the cache.
+//
+// redisotel is built on semantic conventions v1.24, so two of its options stay
+// off: the caller attributes (code.filepath/function/lineno) and db.statement
+// are deprecated keys the platform registry rejects, and the statement carries
+// the cache key besides.
 func instrumentClient(rdb redis.UniversalClient) {
-	if err := redisotel.InstrumentTracing(rdb); err != nil {
+	if err := redisotel.InstrumentTracing(rdb,
+		redisotel.WithCallerEnabled(false),
+		redisotel.WithDBStatement(false),
+	); err != nil {
 		otel.Handle(err)
 	}
 	if err := redisotel.InstrumentMetrics(rdb); err != nil {
