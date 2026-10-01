@@ -15,7 +15,7 @@ checkout time.
 
 | Area | Technology |
 |------|------------|
-| Runtime | Go 1.26 |
+| Runtime | Go 1.27 |
 | Transports | HTTP (public catalog, one internal create) · gRPC server (prices) · gRPC client (reviews, availability) |
 | Data | PostgreSQL · Valkey for cache-aside reads |
 | Platform libraries | `dbx`, `grpcx`, `httpx`, `logger/zapx`, `migratex`, `obsx`, `proto` |
