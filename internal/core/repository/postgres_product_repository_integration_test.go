@@ -13,9 +13,11 @@ package repository
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/duynhlab/product-service/internal/core/domain"
@@ -58,21 +60,17 @@ func newTestDB(t *testing.T) *pgxpool.Pool {
 	return pool
 }
 
-// applyMigrations runs every db/migrations/sql/*.up.sql in lexical order using a
-// simple-protocol connection (so multi-statement files execute in one round).
+// applyMigrations runs every db/migrations/sql/*.up.sql in lexical order.
 func applyMigrations(t *testing.T, ctx context.Context, dsn string) {
 	t.Helper()
-	cfg, err := pgx.ParseConfig(dsn)
-	if err != nil {
-		t.Fatalf("parse config: %v", err)
+	if err := applyMigrationFiles(ctx, dsn, migrationFiles(t)); err != nil {
+		t.Fatal(err)
 	}
-	cfg.DefaultQueryExecMode = pgx.QueryExecModeSimpleProtocol
-	conn, err := pgx.ConnectConfig(ctx, cfg)
-	if err != nil {
-		t.Fatalf("connect for migrations: %v", err)
-	}
-	defer conn.Close(ctx)
+}
 
+// migrationFiles lists db/migrations/sql/*.up.sql in lexical (= version) order.
+func migrationFiles(t *testing.T) []string {
+	t.Helper()
 	dir := filepath.Join("..", "..", "..", "db", "migrations", "sql")
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -80,21 +78,39 @@ func applyMigrations(t *testing.T, ctx context.Context, dsn string) {
 	}
 	var files []string
 	for _, e := range entries {
-		if !e.IsDir() && filepath.Ext(e.Name()) == ".sql" &&
-			len(e.Name()) > 7 && e.Name()[len(e.Name())-7:] == ".up.sql" {
-			files = append(files, e.Name())
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".up.sql") {
+			files = append(files, filepath.Join(dir, e.Name()))
 		}
 	}
 	sort.Strings(files)
+	return files
+}
+
+// applyMigrationFiles applies the given files over one simple-protocol
+// connection (so multi-statement files execute in one round), stopping at the
+// first error.
+func applyMigrationFiles(ctx context.Context, dsn string, files []string) error {
+	cfg, err := pgx.ParseConfig(dsn)
+	if err != nil {
+		return fmt.Errorf("parse config: %w", err)
+	}
+	cfg.DefaultQueryExecMode = pgx.QueryExecModeSimpleProtocol
+	conn, err := pgx.ConnectConfig(ctx, cfg)
+	if err != nil {
+		return fmt.Errorf("connect for migrations: %w", err)
+	}
+	defer conn.Close(ctx)
+
 	for _, f := range files {
-		sqlBytes, err := os.ReadFile(filepath.Join(dir, f))
+		sqlBytes, err := os.ReadFile(f)
 		if err != nil {
-			t.Fatalf("read %s: %v", f, err)
+			return fmt.Errorf("read %s: %w", f, err)
 		}
 		if _, err := conn.Exec(ctx, string(sqlBytes)); err != nil {
-			t.Fatalf("apply migration %s: %v", f, err)
+			return fmt.Errorf("apply migration %s: %w", filepath.Base(f), err)
 		}
 	}
+	return nil
 }
 
 func TestPostgresProductRepository_Integration(t *testing.T) {

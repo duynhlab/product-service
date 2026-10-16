@@ -92,15 +92,28 @@ BEGIN
   -- migration can stamp version 6 clean having revoked nothing, leaving the operator
   -- with a version number that reads like an achieved privilege change.
   --
-  -- Checked by PRIVILEGE, not by role name, so it also catches what the name guard
-  -- above cannot see: a role renamed after 000005 that kept the grant, or any other
-  -- login role holding SELECT on products that nobody documented.
-  SELECT string_agg(r.rolname, ', ') INTO leftover
-    FROM pg_roles r
-   WHERE r.rolcanlogin
-     AND NOT r.rolsuper
-     AND r.rolname <> current_user
-     AND has_table_privilege(r.oid, 'public.products', 'SELECT');
+  -- Checked on the table's own ACL, not by role name, so it also catches what the
+  -- name guard above cannot see: a role renamed after 000005 that kept the grant,
+  -- or any other grant on products that nobody documented. Two grantees are
+  -- expected and skipped: the table's owner, and the service's runtime login
+  -- (`<database>_runtime`), which the platform grants CRUD on every table.
+  --
+  -- The ACL, not has_table_privilege(): effective privilege also counts access
+  -- through role membership, and the platform's authorization executor is a
+  -- member of the owner by design, so every database with the owner / migrator /
+  -- runtime split would refuse here forever. Membership is guarded by the
+  -- platform (pg_role_membership); this check is about grants on this table.
+  -- Grantee 0 is PUBLIC, which has no pg_roles row: a SELECT for PUBLIC is
+  -- reported too.
+  SELECT string_agg(COALESCE(g.rolname, 'PUBLIC'), ', '
+                    ORDER BY COALESCE(g.rolname, 'PUBLIC')) INTO leftover
+    FROM pg_class c
+   CROSS JOIN LATERAL aclexplode(c.relacl) a
+    LEFT JOIN pg_roles g ON g.oid = a.grantee
+   WHERE c.oid = 'public.products'::regclass
+     AND a.privilege_type = 'SELECT'
+     AND a.grantee <> c.relowner
+     AND COALESCE(g.rolname, 'PUBLIC') <> current_database() || '_runtime';
   --
   -- Raising here fails the whole migration, so golang-migrate marks version 6
   -- DIRTY and the init container crash-loops until a human intervenes. That is the
