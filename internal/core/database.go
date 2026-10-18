@@ -19,6 +19,16 @@ import (
 // subcommand, so the app and migrations connect identically. Max connections is
 // applied via dbx.WithMaxConns rather than the DSN string, keeping the DSN a
 // single source of truth.
+//
+// When DB_PASSWORD_FILE is set (ADR-025 pattern A), WithPasswordFile makes
+// dbx read the password from that mounted file on every new connection, so a
+// rotated password is used without a pod restart. The DSN password is then
+// ignored: a missing or empty file fails the connection instead of falling
+// back. dbx also caps connection lifetime at 30m (±3m) so the pool moves onto
+// a rotated password. An empty path is a no-op (DB_PASSWORD as before).
 func Connect(ctx context.Context, cfg config.DatabaseConfig) (*pgxpool.Pool, error) {
-	return dbx.NewPool(ctx, cfg.BuildDSN(), dbx.WithMaxConns(cfg.MaxConnections))
+	return dbx.NewPool(ctx, cfg.BuildDSN(),
+		dbx.WithMaxConns(cfg.MaxConnections),
+		dbx.WithPasswordFile(cfg.PasswordFile),
+	)
 }
