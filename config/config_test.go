@@ -2,6 +2,7 @@ package config
 
 import (
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 )
@@ -279,5 +280,27 @@ func TestPredicatesContainsAndDurations(t *testing.T) {
 	}
 	if contains([]string{"a", "b"}, "z") {
 		t.Error("contains: no match expected")
+	}
+}
+
+// A password from a file (DB_PASSWORD_FILE, ADR-025 pattern A) satisfies
+// Validate in place of DB_PASSWORD; with neither set it still errors.
+func TestValidate_PasswordFile(t *testing.T) {
+	base := func() *Config {
+		c := validConfig()
+		c.Database.Host = "h"
+		c.Database.Name = "n"
+		c.Database.User = "u"
+		return c
+	}
+
+	ok := base()
+	ok.Database.PasswordFile = "/etc/db/secret/password"
+	if err := ok.Validate(); err != nil {
+		t.Errorf("Validate() with PasswordFile set = %v, want nil", err)
+	}
+
+	if err := base().Validate(); err == nil || !strings.Contains(err.Error(), "DB_PASSWORD or DB_PASSWORD_FILE is required") {
+		t.Errorf("Validate() = %v, want the DB_PASSWORD or DB_PASSWORD_FILE error", err)
 	}
 }
