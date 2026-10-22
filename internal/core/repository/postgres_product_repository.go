@@ -15,6 +15,9 @@ import (
 // PostgresProductRepository implements ProductRepository using PostgreSQL with pgx
 type PostgresProductRepository struct {
 	pool *pgxpool.Pool
+	// related serves FindRelatedProducts; it is the replica pool when one is
+	// configured (WithRelatedReadPool), otherwise pool.
+	related *pgxpool.Pool
 }
 
 // Ensure interface compliance
@@ -22,7 +25,19 @@ var _ domain.ProductRepository = (*PostgresProductRepository)(nil)
 
 // NewPostgresProductRepository creates a new PostgreSQL product repository
 func NewPostgresProductRepository(pool *pgxpool.Pool) *PostgresProductRepository {
-	return &PostgresProductRepository{pool: pool}
+	return &PostgresProductRepository{pool: pool, related: pool}
+}
+
+// WithRelatedReadPool sends FindRelatedProducts to a stale-read replica pool.
+// Related products are not cached and a lag of a few seconds is invisible, so
+// it is the one read that may use a replica: listing and detail reads fill the
+// product cache, where a replica read racing an invalidation would pin a stale
+// row until the TTL. A nil pool keeps the primary.
+func (r *PostgresProductRepository) WithRelatedReadPool(pool *pgxpool.Pool) *PostgresProductRepository {
+	if pool != nil {
+		r.related = pool
+	}
+	return r
 }
 
 // FindByID retrieves a product by ID.
@@ -226,7 +241,7 @@ func (r *PostgresProductRepository) FindRelatedProducts(ctx context.Context, pro
 		LIMIT $2
 	`
 
-	rows, err := r.pool.Query(ctx, query, productID, limit)
+	rows, err := r.related.Query(ctx, query, productID, limit)
 	if err != nil {
 		return nil, err
 	}

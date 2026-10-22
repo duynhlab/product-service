@@ -314,3 +314,63 @@ func TestPostgresProductRepository_FindByIDs_Integration(t *testing.T) {
 		}
 	})
 }
+
+// With a related-read pool, FindRelatedProducts runs there and nothing else
+// does. The pool carries PgDog's routing option; plain PostgreSQL accepts the
+// dotted setting, so the same DSN works without PgDog (local-stack).
+func TestPostgresProductRepository_RelatedReadPool_Integration(t *testing.T) {
+	pool := newTestDB(t)
+	ctx := context.Background()
+	cfg := pool.Config().ConnConfig
+	dsn := fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=disable&options=%s",
+		cfg.User, cfg.Password, cfg.Host, cfg.Port, cfg.Database, "-c%20pgdog.role%3Dreplica")
+	replica, err := pgxpool.New(ctx, dsn)
+	if err != nil {
+		t.Fatalf("replica pool: %v", err)
+	}
+	t.Cleanup(replica.Close)
+	var role string
+	if err := replica.QueryRow(ctx, "SELECT current_setting('pgdog.role')").Scan(&role); err != nil || role != "replica" {
+		t.Fatalf("pgdog.role on the replica pool = %q, %v", role, err)
+	}
+
+	repo := NewPostgresProductRepository(pool).WithRelatedReadPool(replica)
+	var category string
+	if err := pool.QueryRow(ctx, "SELECT name FROM categories LIMIT 1").Scan(&category); err != nil {
+		t.Fatalf("seeded category: %v", err)
+	}
+	a := &domain.Product{Name: "related-a", Description: "d", Price: 1, Category: category}
+	b := &domain.Product{Name: "related-b", Description: "d", Price: 2, Category: category}
+	for _, p := range []*domain.Product{a, b} {
+		if err := repo.Create(ctx, p); err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+	}
+
+	before := replica.Stat().AcquireCount()
+	got, err := repo.FindRelatedProducts(ctx, a.ID, 10)
+	if err != nil {
+		t.Fatalf("FindRelatedProducts: %v", err)
+	}
+	if replica.Stat().AcquireCount() <= before {
+		t.Error("FindRelatedProducts did not use the related-read pool")
+	}
+	found := false
+	for _, p := range got {
+		found = found || p.ID == b.ID
+	}
+	if !found {
+		t.Errorf("related products %v do not include %s", got, b.ID)
+	}
+
+	before = replica.Stat().AcquireCount()
+	if _, err := repo.FindByID(ctx, a.ID); err != nil {
+		t.Fatalf("FindByID: %v", err)
+	}
+	if replica.Stat().AcquireCount() != before {
+		t.Error("FindByID used the related-read pool; it must stay on the primary")
+	}
+	if repo.WithRelatedReadPool(nil).related != replica {
+		t.Error("WithRelatedReadPool(nil) replaced the configured pool")
+	}
+}
