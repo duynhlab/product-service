@@ -30,5 +30,7 @@ func Connect(ctx context.Context, cfg config.DatabaseConfig) (*pgxpool.Pool, err
 	return dbx.NewPool(ctx, cfg.BuildDSN(),
 		dbx.WithMaxConns(cfg.MaxConnections),
 		dbx.WithPasswordFile(cfg.PasswordFile),
+		dbx.WithMaxConnLifetime(cfg.MaxConnLifetime),
+		dbx.WithHealthCheckPeriod(cfg.HealthCheckPeriod),
 	)
 }
