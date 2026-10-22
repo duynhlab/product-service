@@ -122,6 +122,7 @@ type DatabaseConfig struct {
 	MaxConnections    int           // Max connections - from DB_POOL_MAX_CONNECTIONS env (default: 25)
 	MaxConnLifetime   time.Duration // Pooled connection lifetime - from DB_POOL_MAX_CONN_LIFETIME env (optional, e.g. 45s; empty = pkg/dbx default)
 	HealthCheckPeriod time.Duration // Idle-connection check period - from DB_POOL_HEALTH_CHECK_PERIOD env (optional; empty = pgxpool default 1m)
+	ReadReplica       bool          // Opt-in stale-read pool for related products - from DB_READ_REPLICA env (default: false)
 	PoolMode          string        // Pool mode - from DB_POOL_MODE env (optional)
 	PoolerType        string        // Pooler type - from DB_POOLER_TYPE env (optional)
 }
@@ -187,6 +188,7 @@ func Load() *Config {
 			MaxConnections:    getEnvInt("DB_POOL_MAX_CONNECTIONS", 25),
 			MaxConnLifetime:   getEnvOptionalDuration("DB_POOL_MAX_CONN_LIFETIME"),
 			HealthCheckPeriod: getEnvOptionalDuration("DB_POOL_HEALTH_CHECK_PERIOD"),
+			ReadReplica:       getEnvBool("DB_READ_REPLICA", false),
 			PoolMode:          getEnv("DB_POOL_MODE", ""),
 			PoolerType:        getEnv("DB_POOLER_TYPE", ""),
 		},

@@ -2,6 +2,7 @@ package database
 
 import (
 	"context"
+	"net/url"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -33,4 +34,31 @@ func Connect(ctx context.Context, cfg config.DatabaseConfig) (*pgxpool.Pool, err
 		dbx.WithMaxConnLifetime(cfg.MaxConnLifetime),
 		dbx.WithHealthCheckPeriod(cfg.HealthCheckPeriod),
 	)
+}
+
+// replicaPoolMaxConns sizes the replica pool: it serves only related-product
+// reads, so it stays far below the primary pool.
+const replicaPoolMaxConns = 5
+
+// ConnectReplica opens the opt-in stale-read pool (ADR-089, #1304). It dials
+// the same PgDog database as Connect, with the startup option
+// pgdog.role=replica, so PgDog routes every statement on these connections to
+// a product-db replica and falls back to the primary when all replicas lag
+// past its ban threshold. Only reads that tolerate that lag and are not cached
+// may use it: today FindRelatedProducts.
+func ConnectReplica(ctx context.Context, cfg config.DatabaseConfig) (*pgxpool.Pool, error) {
+	return dbx.NewPool(ctx, replicaDSN(cfg),
+		dbx.WithMaxConns(replicaPoolMaxConns),
+		dbx.WithPoolName("product-replica"),
+		dbx.WithPasswordFile(cfg.PasswordFile),
+		dbx.WithMaxConnLifetime(cfg.MaxConnLifetime),
+		dbx.WithHealthCheckPeriod(cfg.HealthCheckPeriod),
+	)
+}
+
+// replicaDSN is the primary DSN plus options=-c pgdog.role=replica. PostgreSQL
+// accepts the dotted name as a custom setting, so the same DSN also works
+// without PgDog (local-stack), where it simply reads the primary.
+func replicaDSN(cfg config.DatabaseConfig) string {
+	return cfg.BuildDSN() + "&options=" + url.QueryEscape("-c pgdog.role=replica")
 }

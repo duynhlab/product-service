@@ -215,6 +215,15 @@ func main() {
 
 	// Initialize repositories (Core layer)
 	productRepo := repository.NewPostgresProductRepository(pool)
+	if cfg.Database.ReadReplica {
+		replicaPool, err := database.ConnectReplica(context.Background(), cfg.Database)
+		if err != nil {
+			logger.Fatal(ctx, "Failed to connect the read-replica pool", slogx.Err(err))
+		}
+		defer replicaPool.Close()
+		productRepo.WithRelatedReadPool(replicaPool)
+		logger.Info(ctx, "Related products read from the replica pool (DB_READ_REPLICA)")
+	}
 	logger.Info(ctx, "Product repository initialized")
 
 	// Initialize cache client (Core layer) - optional, can be nil if disabled
