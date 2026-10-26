@@ -4,13 +4,13 @@ go 1.27.1
 
 require (
 	github.com/alicebob/miniredis/v2 v2.39.0
-	github.com/duynhlab/pkg/authmw v0.38.0
+	github.com/duynhlab/pkg/authmw v0.39.0
 	github.com/duynhlab/pkg/dbx v0.40.1
 	github.com/duynhlab/pkg/grpcx v0.38.0
 	github.com/duynhlab/pkg/httpmw v0.4.0
 	github.com/duynhlab/pkg/httpx v0.38.0
 	github.com/duynhlab/pkg/logger/slogx v0.4.0
-	github.com/duynhlab/pkg/migratex v0.37.0
+	github.com/duynhlab/pkg/migratex v0.39.0
 	github.com/duynhlab/pkg/obsx v0.48.0
 	github.com/duynhlab/pkg/proto v0.38.0
 	github.com/gin-gonic/gin v1.12.0
