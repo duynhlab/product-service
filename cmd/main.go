@@ -137,6 +137,17 @@ func applySeed(ctx context.Context, cfg *config.Config) error {
 	return nil
 }
 
+// otelShutdownTimeout bounds the final telemetry flush on its own clock:
+// an exhausted HTTP drain must not leave the exporter with an expired
+// context and lose the last process.stopped record and spans (#1359).
+const otelShutdownTimeout = 5 * time.Second
+
+func shutdownTelemetry(shutdown func(context.Context) error, timeout time.Duration) error {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	return shutdown(ctx)
+}
+
 //nolint:gocognit,funlen // main orchestrates startup/shutdown; single func is intentional
 func main() {
 	ctx := context.Background()
@@ -443,7 +454,7 @@ func main() {
 	// 4. Shutdown the OTel SDK — flushes pending spans plus any OTLP
 	// metrics/logs providers built behind the RFC-0014 flags.
 	if tp != nil {
-		if err := tp.Shutdown(shutdownCtx); err != nil {
+		if err := shutdownTelemetry(tp.Shutdown, otelShutdownTimeout); err != nil {
 			logger.Error(ctx, "OpenTelemetry shutdown error", slogx.Err(err))
 		} else {
 			logger.Info(ctx, "OpenTelemetry shutdown complete")
