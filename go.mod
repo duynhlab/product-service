@@ -3,7 +3,7 @@ module github.com/duynhlab/product-service
 go 1.27.1
 
 require (
-	github.com/alicebob/miniredis/v2 v2.39.0
+	github.com/alicebob/miniredis/v2 v2.40.0
 	github.com/duynhlab/pkg/authmw v0.38.0
 	github.com/duynhlab/pkg/dbx v0.40.1
 	github.com/duynhlab/pkg/grpcx v0.38.0
